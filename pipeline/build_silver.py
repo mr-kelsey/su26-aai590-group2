@@ -72,7 +72,11 @@ ORACLE_PARK = (37.7786, -122.3893)  # lat, lon
 RING_EDGES_MI = [0.0, 0.1864, 0.5, 1.0, 2.0, 5.0]
 RING_LABELS = ["0-300m", "300m-0.5mi", "0.5-1mi", "1-2mi", "2-5mi"]
 
-PANEL_START = "2022-01-01"  # v1 scope: 2022+ era only (Advan starts 2020-01-06)
+PANEL_START = "2022-01-01"  # study window: 2022+ era (Advan starts 2020-01-06)
+PANEL_END = "2025-12-31"    # study window cutoff: full seasons 2022-2025 only
+                            # (decided 2026-07-18). Bronze retains later raw
+                            # data; the scope is enforced HERE, never by
+                            # trimming raw files.
 FOOD_NAICS_PREFIX = "722"   # Food Services and Drinking Places
 VENUE_POI_NAME = "Oracle Park"  # the stadium's own Advan POI (excluded in *_ex_venue)
 SF8_STATIONS = ("EMBR", "MONT", "POWL", "CIVC", "16TH", "24TH", "GLEN", "BALB")
@@ -260,6 +264,7 @@ def build_visits_ring_day(con, bronze):
         FROM advan_daily d
         JOIN poi_rings r USING (FOOTPRINT_ID)
         WHERE r.ring_id IS NOT NULL
+          AND d.date BETWEEN DATE '{PANEL_START}' AND DATE '{PANEL_END}'
         GROUP BY 1, 2, 3
     """)
     n, dmin, dmax = con.sql(
@@ -368,7 +373,7 @@ def build_weather_day(con, bronze):
                COALESCE(MAX(AWND) FILTER (STATION = 'USW00023272'),
                         MAX(AWND) FILTER (STATION = 'USW00023234')) AS awnd
         FROM read_csv('{noaa}', union_by_name = true)
-        WHERE DATE::DATE >= DATE '{PANEL_START}'
+        WHERE DATE::DATE BETWEEN DATE '{PANEL_START}' AND DATE '{PANEL_END}'
         GROUP BY 1
     """)
     log(f"weather_day: {con.sql('SELECT COUNT(*) FROM weather_day').fetchone()[0]} days")
@@ -384,7 +389,7 @@ def build_transit_day(con, bronze):
             SELECT date::DATE AS date, em::BIGINT AS bart_em_exits,
                    mt::BIGINT AS bart_mt_exits
             FROM read_csv('{exits}')
-            WHERE date::DATE >= DATE '{PANEL_START}'),
+            WHERE date::DATE BETWEEN DATE '{PANEL_START}' AND DATE '{PANEL_END}'),
         od AS (
             SELECT date,
                    SUM(trip_count) FILTER (destination IN ('EMBR', 'MONT'))
@@ -395,6 +400,7 @@ def build_transit_day(con, bronze):
                    SUM(trip_count) FILTER (destination IN ({sf8}))
                        AS od_sf8_arrivals
             FROM read_parquet('{od}')
+            WHERE date BETWEEN DATE '{PANEL_START}' AND DATE '{PANEL_END}'
             GROUP BY 1)
         SELECT COALESCE(ex.date, od.date) AS date,
                ex.bart_em_exits, ex.bart_mt_exits,
@@ -420,9 +426,11 @@ def build_bikeshare_ring_day(con, bronze):
         QA["bikeshare_built"] = {"ok": True, "detail": "skipped: non-local bronze"}
         return
 
+    end_month = int(PANEL_END[:4] + PANEL_END[5:7])
     zips = sorted(
         f for f in os.listdir(folder)
-        if f.endswith(".zip") and re.match(r"^\d{6}", f) and int(f[:6]) >= 202201
+        if f.endswith(".zip") and re.match(r"^\d{6}", f)
+        and 202201 <= int(f[:6]) <= end_month
     )
     log(f"bikeshare: extracting {len(zips)} monthly zips (2022+)")
     with tempfile.TemporaryDirectory(prefix="baywheels_") as tmp:
@@ -452,13 +460,15 @@ def build_bikeshare_ring_day(con, bronze):
                 SELECT {ring_case_sql(f'({dist_s})')} AS ring_id, sdate AS date,
                        COUNT(*) AS bike_starts
                 FROM bike_trips
-                WHERE start_lat IS NOT NULL AND sdate IS NOT NULL
+                WHERE start_lat IS NOT NULL
+                  AND sdate BETWEEN DATE '{PANEL_START}' AND DATE '{PANEL_END}'
                 GROUP BY 1, 2),
             e AS (
                 SELECT {ring_case_sql(f'({dist_e})')} AS ring_id, edate AS date,
                        COUNT(*) AS bike_ends
                 FROM bike_trips
-                WHERE end_lat IS NOT NULL AND edate IS NOT NULL
+                WHERE end_lat IS NOT NULL
+                  AND edate BETWEEN DATE '{PANEL_START}' AND DATE '{PANEL_END}'
                 GROUP BY 1, 2)
             SELECT COALESCE(s.ring_id, e.ring_id) AS ring_id,
                    {ring_label_sql('COALESCE(s.ring_id, e.ring_id)')} AS ring,
@@ -568,7 +578,8 @@ def write_outputs(con, out, bronze, started):
         "git_sha": git_sha(),
         "bronze": bronze,
         "params": {"ring_edges_mi": RING_EDGES_MI, "ring_labels": RING_LABELS,
-                   "panel_start": PANEL_START, "food_naics_prefix": FOOD_NAICS_PREFIX},
+                   "panel_start": PANEL_START, "panel_end": PANEL_END,
+                   "food_naics_prefix": FOOD_NAICS_PREFIX},
         "tables": counts,
         "qa": QA,
         "bronze_snapshot": bronze_snapshot(bronze),
@@ -593,7 +604,9 @@ reflects exactly one build.
 
 Grain: rings around Oracle Park (37.7786, -122.3893), edges (miles):
 {m['params']['ring_edges_mi']} -> rings {m['params']['ring_labels']}.
-Window: {m['params']['panel_start']} onward (2022+ era; 2020-2021 excluded by design).
+Window: {m['params']['panel_start']} to {m['params']['panel_end']} (full seasons
+2022-2025; 2020-2021 excluded by design; bronze retains raw data beyond the
+window, the cutoff is enforced here).
 
 | Table | Rows |
 |---|---|
