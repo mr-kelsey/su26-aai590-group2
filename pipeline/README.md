@@ -20,10 +20,11 @@ POI panel), Bay Wheels trips, the Giants-game treatment (attendance, day/night,
 first pitch hour), confounder flags (ballpark, Chase, Moscone, citywide,
 street-fair events), a clean-control flag, weather, and BART features.
 
-Rings around Oracle Park (37.7786, -122.3893), edges in miles:
-`[0, 0.1864, 0.5, 1, 2, 5]` (0.1864 mi = 300 m core). Change `RING_EDGES_MI`
-in one place to re-ring everything. Window: 2022-01-01 through the last full
-Advan week; 2020-2021 stays excluded by design.
+Rings around Oracle Park (37.7786, -122.3893), edges in METERS:
+`[0, 250, 500, 1000, 2500, 5000]` (metric standard adopted 2026-07-18; the
+sources' only native distance unit is meters). Change `RING_EDGES_M` in one
+place to re-ring everything. Window: 2022-01-01 to 2025-12-31 (full seasons
+only; `PANEL_END`); 2020-2021 stays excluded by design.
 
 QA gates fail the build loudly: Monday-aligned Advan weeks, VISITS_BY_DAY
 parse + tolerance vs VISIT_COUNTS, panel shape (days x rings, no dups), full

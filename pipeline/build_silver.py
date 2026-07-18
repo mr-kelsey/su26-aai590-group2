@@ -67,10 +67,12 @@ import duckdb
 
 ORACLE_PARK = (37.7786, -122.3893)  # lat, lon
 
-# Ring edges in miles. 0.1864 mi = 300 m: Luke's core ring, kept as ring 1
-# inside the build-plan's 0-0.5 / 0.5-1 / 1-2 / 2-5 mi set. Change HERE only.
-RING_EDGES_MI = [0.0, 0.1864, 0.5, 1.0, 2.0, 5.0]
-RING_LABELS = ["0-300m", "300m-0.5mi", "0.5-1mi", "1-2mi", "2-5mi"]
+# Ring edges in METERS (team decision 2026-07-18: single metric unit, matching
+# the sources; Advan's only native distance field, DISTANCE_FROM_HOME, is in
+# meters). Change HERE only. Note ring 1 (0-250m) is tighter than Luke's
+# original 0-300m ring, so his eia-nowcast series is a near-match, not exact.
+RING_EDGES_M = [0, 250, 500, 1000, 2500, 5000]
+RING_LABELS = ["0-250m", "250-500m", "500m-1km", "1-2.5km", "2.5-5km"]
 
 PANEL_START = "2022-01-01"  # study window: 2022+ era (Advan starts 2020-01-06)
 PANEL_END = "2025-12-31"    # study window cutoff: full seasons 2022-2025 only
@@ -103,9 +105,10 @@ def gate(name, ok, detail):
 
 
 def haversine_sql(lat_col, lon_col):
+    # meters (mean Earth radius 6,371,008.8 m)
     lat0, lon0 = ORACLE_PARK
     return (
-        f"2 * 3958.8 * asin(sqrt("
+        f"2 * 6371008.8 * asin(sqrt("
         f"sin(radians({lat_col} - ({lat0})) / 2) ^ 2 + "
         f"cos(radians({lat0})) * cos(radians({lat_col})) * "
         f"sin(radians({lon_col} - ({lon0})) / 2) ^ 2))"
@@ -116,9 +119,9 @@ def ring_case_sql(dist_col):
     parts = []
     for i, label in enumerate(RING_LABELS):
         parts.append(
-            f"WHEN {dist_col} < {RING_EDGES_MI[i + 1]} THEN {i + 1}"
+            f"WHEN {dist_col} < {RING_EDGES_M[i + 1]} THEN {i + 1}"
         )
-    return f"CASE WHEN {dist_col} < {RING_EDGES_MI[0]} THEN NULL " + " ".join(parts) + " ELSE NULL END"
+    return f"CASE WHEN {dist_col} < {RING_EDGES_M[0]} THEN NULL " + " ".join(parts) + " ELSE NULL END"
 
 
 def ring_label_sql(ring_id_col):
@@ -192,11 +195,11 @@ def build_poi_rings(con, bronze):
                    MAX(DATE_RANGE_START::DATE) AS last_week
             FROM read_parquet('{advan}')
             GROUP BY FOOTPRINT_ID),
-        d AS (SELECT *, {dist} AS dist_mi FROM pois)
-        SELECT * EXCLUDE (dist_mi),
-               ROUND(dist_mi, 4) AS dist_mi,
-               {ring_case_sql('dist_mi')} AS ring_id,
-               {ring_label_sql(ring_case_sql('dist_mi'))} AS ring
+        d AS (SELECT *, {dist} AS dist_m FROM pois)
+        SELECT * EXCLUDE (dist_m),
+               ROUND(dist_m, 1) AS dist_m,
+               {ring_case_sql('dist_m')} AS ring_id,
+               {ring_label_sql(ring_case_sql('dist_m'))} AS ring
         FROM d
     """)
     n_total, n_ringed = con.sql(
@@ -204,7 +207,7 @@ def build_poi_rings(con, bronze):
     per_ring = con.sql(
         "SELECT ring, COUNT(*) FROM poi_rings WHERE ring IS NOT NULL "
         "GROUP BY ring ORDER BY min(ring_id)").fetchall()
-    log(f"poi_rings: {n_total} POIs, {n_ringed} within {RING_EDGES_MI[-1]} mi "
+    log(f"poi_rings: {n_total} POIs, {n_ringed} within {RING_EDGES_M[-1]} m "
         f"({', '.join(f'{r}={n}' for r, n in per_ring)})")
     gate("poi_rings_core_nonempty", per_ring and per_ring[0][1] > 0,
          f"core ring POI count = {per_ring[0][1] if per_ring else 0}")
@@ -520,33 +523,42 @@ def build_panel(con, panel_end):
 
 def crosscheck_bike_lift(con):
     """Reproduce the validate_join.py Aug-2024 contrast: Bay Wheels trips
-    starting <= 1 mi of the park (rings 1-3), game vs non-game days. The
-    corrected reference number (officialDate fix, 2026-07-02) is +9.3%."""
-    row = con.sql("""
+    starting within 1 MILE (1609.344 m, the original check's definition) of
+    the park, game vs non-game days. Reference: +9.3% (officialDate fix,
+    2026-07-02). Computed from raw trips at a fixed radius on purpose, so
+    this check stays faithful no matter how RING_EDGES_M changes."""
+    if not con.sql("SELECT COUNT(*) FROM information_schema.tables "
+                   "WHERE table_name = 'bike_trips'").fetchone()[0]:
+        QA["crosscheck_bike_lift"] = {"ok": True, "detail": "skipped: no bikeshare data"}
+        return
+    dist = haversine_sql("start_lat", "start_lng")
+    row = con.sql(f"""
         WITH b AS (
-            SELECT date, SUM(bike_starts) AS starts
-            FROM bikeshare_ring_day WHERE ring_id <= 3 GROUP BY 1),
-        aug AS (
-            SELECT b.starts, c.giants_home
-            FROM b JOIN calendar_day c USING (date)
-            WHERE b.date BETWEEN DATE '2024-08-01' AND DATE '2024-08-31')
-        SELECT AVG(starts) FILTER (giants_home),
-               AVG(starts) FILTER (NOT giants_home) FROM aug
+            SELECT sdate AS date, COUNT(*) AS starts
+            FROM bike_trips
+            WHERE start_lat IS NOT NULL AND ({dist}) <= 1609.344
+              AND sdate BETWEEN DATE '2024-08-01' AND DATE '2024-08-31'
+            GROUP BY 1)
+        SELECT AVG(starts) FILTER (c.giants_home),
+               AVG(starts) FILTER (NOT c.giants_home)
+        FROM b JOIN calendar_day c USING (date)
     """).fetchone()
     if not row or row[0] is None or row[1] is None:
-        QA["crosscheck_bike_lift"] = {"ok": True, "detail": "skipped: no bikeshare data"}
+        QA["crosscheck_bike_lift"] = {"ok": True, "detail": "skipped: no Aug-2024 data"}
         return
     lift = (row[0] - row[1]) / row[1] * 100
     gate("crosscheck_bike_lift", 4 <= lift <= 16,
-         f"Aug-2024 game-day lift = {lift:.1f}% (reference ~9.3%)")
+         f"Aug-2024 game-day lift at 1 mi = {lift:.1f}% (reference ~9.3%)")
 
 
 def crosscheck_luke_residuals(con, residuals):
     """Report-only: Luke's game_residuals_0_300m `v` vs our ring-1
-    visits_food. Established 2026-07-18: his v = daily visits to NAICS-722
-    (food services) POIs within 0-300m, and this pipeline reproduces it at
-    corr = 1.0000, ratio = 1.0000. Never fails the build (the file may be
-    unreachable)."""
+    visits_food. His v = daily visits to NAICS-722 (food services) POIs
+    within 0-300m; with the pre-metric 0-300m core ring this pipeline
+    reproduced it EXACTLY (corr = 1.0000, ratio = 1.0000, established
+    2026-07-18). After the metric re-ring (core = 0-250m) ring 1 is a subset
+    of his POI set, so expect corr high but below 1 and his/ours ratio above
+    1. Never fails the build (the file may be unreachable)."""
     try:
         corr, ratio, n = con.sql(f"""
             SELECT corr(l.v, o.visits_food), AVG(l.v / o.visits_food), COUNT(*)
@@ -577,7 +589,7 @@ def write_outputs(con, out, bronze, started):
         "built_at": started.isoformat(timespec="seconds"),
         "git_sha": git_sha(),
         "bronze": bronze,
-        "params": {"ring_edges_mi": RING_EDGES_MI, "ring_labels": RING_LABELS,
+        "params": {"ring_edges_m": RING_EDGES_M, "ring_labels": RING_LABELS,
                    "panel_start": PANEL_START, "panel_end": PANEL_END,
                    "food_naics_prefix": FOOD_NAICS_PREFIX},
         "tables": counts,
@@ -602,8 +614,8 @@ DERIVED DATA. Built only by `pipeline/build_silver.py` in the team repo
 code or bronze and rebuild. This prefix is synced with `--delete`: it always
 reflects exactly one build.
 
-Grain: rings around Oracle Park (37.7786, -122.3893), edges (miles):
-{m['params']['ring_edges_mi']} -> rings {m['params']['ring_labels']}.
+Grain: rings around Oracle Park (37.7786, -122.3893), edges (meters):
+{m['params']['ring_edges_m']} -> rings {m['params']['ring_labels']}.
 Window: {m['params']['panel_start']} to {m['params']['panel_end']} (full seasons
 2022-2025; 2020-2021 excluded by design; bronze retains raw data beyond the
 window, the cutoff is enforced here).

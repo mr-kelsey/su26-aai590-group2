@@ -64,7 +64,7 @@ MEASURES = ["visits", "visits_ex_venue", "visits_food", "visits_balanced"]
 MATCH_K = 8               # nearest-K same-dow clean-control days per game
 MATCH_MAX_WINDOW_DAYS = 120  # hard cap on how far a control may sit from the game
 MIN_CONTROLS = 5          # game-ring cells with fewer matches get NULL baseline
-RING_MID_MI = {1: 0.09, 2: 0.34, 3: 0.75, 4: 1.5, 5: 3.5}  # ring midpoints
+RING_MID_M = {1: 125, 2: 375, 3: 750, 4: 1750, 5: 3750}  # ring midpoints, meters
 
 QA = {}
 
@@ -211,11 +211,11 @@ def build_event_study(con):
 
 def build_distance_decay(con):
     """Step 3: pct lift by ring distance + a log-linear decay fit."""
-    mid_case = " ".join(f"WHEN {k} THEN {v}" for k, v in RING_MID_MI.items())
+    mid_case = " ".join(f"WHEN {k} THEN {v}" for k, v in RING_MID_M.items())
     con.sql(f"""
         CREATE OR REPLACE TABLE distance_decay AS
         SELECT ring_id, ring, measure,
-               CASE ring_id {mid_case} END AS ring_mid_mi,
+               CASE ring_id {mid_case} END AS ring_mid_m,
                n_games, mean_lift, se_lift, mean_lift_pct, se_lift_pct
         FROM event_study_ring
         WHERE slice = 'all'
@@ -224,13 +224,13 @@ def build_distance_decay(con):
     fits = {}
     for m in MEASURES:
         row = con.sql(f"""
-            SELECT regr_slope(ln(mean_lift_pct), ring_mid_mi),
-                   regr_intercept(ln(mean_lift_pct), ring_mid_mi),
+            SELECT regr_slope(ln(mean_lift_pct), ring_mid_m / 1000.0),
+                   regr_intercept(ln(mean_lift_pct), ring_mid_m / 1000.0),
                    COUNT(*)
             FROM distance_decay
             WHERE measure = '{m}' AND mean_lift_pct > 0
         """).fetchone()
-        fits[m] = {"log_slope_per_mi": row[0], "log_intercept": row[1],
+        fits[m] = {"log_slope_per_km": row[0], "log_intercept": row[1],
                    "rings_used": row[2]}
     QA["decay_fits"] = {"ok": True, "detail": fits}
     inner, outer = con.sql("""
@@ -282,7 +282,8 @@ def build_impact_model(con):
 def crosscheck_luke(con, residuals):
     """Report-only: our ring-1 visits_food lift vs Luke's (v - exp) gap on
     the same game days. His exp is a same-dow control mean with a different
-    window, so we expect high corr, not equality."""
+    window, and since the 2026-07-18 metric re-ring our ring 1 (0-250m) is a
+    subset of his 0-300m POI set, so we expect high corr, not equality."""
     try:
         corr, n = con.sql(f"""
             SELECT corr(g.lift, l.v - l.exp), COUNT(*)
@@ -313,7 +314,7 @@ def write_outputs(con, out, silver, started):
         "silver": silver,
         "params": {"measures": MEASURES, "match_k": MATCH_K,
                    "match_max_window_days": MATCH_MAX_WINDOW_DAYS,
-                   "min_controls": MIN_CONTROLS, "ring_mid_mi": RING_MID_MI},
+                   "min_controls": MIN_CONTROLS, "ring_mid_m": RING_MID_M},
         "tables": counts,
         "stubs": ["dollars_per_visit", "game_impact_dollars", "impact_model"],
         "qa": QA,
