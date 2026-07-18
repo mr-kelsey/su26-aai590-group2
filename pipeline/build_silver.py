@@ -481,7 +481,8 @@ def build_panel(con, panel_end):
             FROM calendar_day c
             CROSS JOIN range(1, {len(RING_LABELS) + 1}) r(ring_id))
         SELECT s.date, s.ring_id, s.ring,
-               v.visits, v.visits_food, v.visits_balanced, v.poi_count,
+               v.visits, v.visits_ex_venue, v.visits_food, v.visits_balanced,
+               v.poi_count,
                b.bike_starts, b.bike_ends,
                c.* EXCLUDE (date),
                w.* EXCLUDE (date),

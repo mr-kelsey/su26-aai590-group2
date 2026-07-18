@@ -45,3 +45,23 @@ with an s3 bronze it is skipped and bike columns come out NULL.
 Every build writes `build_manifest.json` (params, row counts, QA results,
 bronze snapshot, git SHA) and a `README.md` into the output, so the silver
 prefix always documents exactly which build it holds.
+
+## build_gold.py (scaffold)
+
+Builds the answer layer from silver (never bronze). Working today:
+`game_effects` (per game x ring x measure: observed, matched-control
+baseline, lift), `event_study_ring` (pooled effects with SEs; slices for
+day/night and attendance terciles), and `distance_decay` (pct lift by ring
+plus a log-linear fit in the manifest). Baseline v0 is a transparent
+nearest-8 same-day-of-week clean-control mean (max 120 days out); a
+regression baseline is the planned v1 and a natural agent-loop experiment.
+Documented stubs: dollar calibration (blocked on multi-year CDTFA
+disaggregation) and the impact-function model (SageMaker registry tie-in).
+
+QA gates: full matched-control coverage, positive and significant core-ring
+effect, outward decay, and a report-only comparison against Luke's
+eia-nowcast residuals (corr 0.9965 on first build).
+
+Promotion rule: build_gold.py writes locally and is NOT auto-published.
+`gold/` in the bucket holds team-promoted builds only; agent-loop variants
+go to `experiments/<run-id>/`.
