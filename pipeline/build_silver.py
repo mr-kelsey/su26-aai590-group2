@@ -100,7 +100,10 @@ SF8_STATIONS = ("EMBR", "MONT", "POWL", "CIVC", "16TH", "24TH", "GLEN", "BALB")
 # Pre-wired confounder drop-in: when Luke's street-fair calendar lands in
 # bronze under this name (columns: date,name), the next rebuild picks it up
 # with no code change.
-STREET_FAIR_REL = "competing_events/street_fairs.csv"
+# Luke's hand-verified fair list (adopted verbatim from his eia-nowcast import,
+# commit eb060ba, schemas/street_fairs_near_oracle.csv). Schema:
+# event_name,date,lat,lon,dist_km,status; only status='happened' rows count.
+STREET_FAIR_REL = "competing_events/street_fairs_near_oracle.csv"
 
 QA = {}  # gate name -> result, written into build_manifest.json
 
@@ -556,9 +559,11 @@ def build_calendar_day(con, bronze, panel_end):
 
     street = bronze_path(bronze, STREET_FAIR_REL)
     if can_read(con, street):
-        street_sql = f"""(SELECT date::DATE AS date, string_agg(name, '; ') AS street_fair
-                          FROM read_csv('{street}') GROUP BY 1)"""
-        log("street-fair calendar found in bronze; folding in")
+        street_sql = f"""(SELECT date::DATE AS date,
+                                 string_agg(event_name, '; ') AS street_fair
+                          FROM read_csv('{street}')
+                          WHERE status = 'happened' GROUP BY 1)"""
+        log("street-fair calendar found in bronze; folding in (status='happened')")
     else:
         street_sql = "(SELECT NULL::DATE AS date, NULL::VARCHAR AS street_fair WHERE false)"
         log(f"street-fair calendar not in bronze yet ({STREET_FAIR_REL}); column stubbed NULL")

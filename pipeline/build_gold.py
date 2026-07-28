@@ -642,6 +642,7 @@ def build_gnn_tables(con, silver, bronze_advan):
                p.chase_event IS NOT NULL AS chase_day,
                p.moscone_event IS NOT NULL AS moscone_day,
                p.citywide_event IS NOT NULL AS citywide_day,
+               p.street_fair IS NOT NULL AS street_fair_day,
                p.us_federal_holiday,
                p.tmax, p.tmin, p.tavg, p.prcp, p.awnd,
                w.temp_hr, w.prcp_hr, w.wind_hr,
@@ -649,8 +650,8 @@ def build_gnn_tables(con, silver, bronze_advan):
                CASE {split_case} END AS split
         FROM panel_dates d
         JOIN (SELECT DISTINCT date, ballpark_event, chase_event,
-                     moscone_event, citywide_event, us_federal_holiday,
-                     tmax, tmin, tavg, prcp, awnd
+                     moscone_event, citywide_event, street_fair,
+                     us_federal_holiday, tmax, tmin, tavg, prcp, awnd
               FROM panel) p USING (date)
         CROSS JOIN (SELECT UNNEST(generate_series(0, 23)) AS hour) h
         LEFT JOIN '{s}/weather_hour.parquet' w
