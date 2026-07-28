@@ -1,0 +1,7 @@
+venue_id,venue_name,city,county_fips,cdtfa_city,lat,lon,sewershed_plant_id,nearest_bart_station,pems_vds_ids,event_types,notes
+V001,Oakland Coliseum complex,Oakland,06001,Oakland,37.7516,-122.2005,TODO,COLS,TODO,"sports,concerts","CLEAN CASE: isolated lots off I-880 + BART at door. Loops AND satellite work here."
+V002,Oracle Park,San Francisco,06075,San Francisco,37.7786,-122.3893,TODO,EMBR,TODO,"sports,concerts","Dense SoMa. NO car-count signal. Transit-primary (Muni Metro + BART transfer)."
+V003,Chase Center,San Francisco,06075,San Francisco,37.7680,-122.3878,TODO,TODO,TODO,"sports,concerts","Dense Mission Bay. Muni Metro T/N served. Transit-primary."
+V004,Empire Polo Club,Indio,06065,Indio,33.6803,-116.2377,TODO,NONE,TODO,"festivals","TIER-3 high-signal cell (Coachella/Stagecoach). No rail. Wastewater + TOT strong."
+V006,Moscone Center,San Francisco,06075,San Francisco,37.7840,-122.4012,TODO,TODO,TODO,"conventions","Inner-ring confounder (~1.4km from Oracle Park). Citywide conventions (Dreamforce, RSA) spike SoMa/downtown demand. Covariate, not treatment."
+V005,TODO,TODO,TODO,TODO,TODO,TODO,TODO,TODO,TODO,TODO,"Template row — fill per venue. Leave a cell TODO rather than guessing an ID."

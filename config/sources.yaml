@@ -1,0 +1,267 @@
+# Data-source registry. One entry per source.
+# status: build-now (free+keyless) | key-needed (free account/token) | paid-inquire
+# The pipeline should build the `build-now` sources first — no credentials required.
+# If you add a source, add it HERE (with license + status) before writing an ingester.
+
+sources:
+
+  # ---------- PHASE 4: DOLLAR ANCHORS ----------
+  - id: cdtfa_c08
+    measures: Taxable sales, Food Services & Drinking Places (calibration anchor)
+    phase: anchor
+    grain: county-quarter (BusinessGroupCode C08 = "Food Services and Drinking Places", NAICS 722)
+    cadence: quarterly
+    lag: ~2 quarters (2025 Q4 live as of 2026-07-01); older quarters may be revised
+    endpoint: https://cdtfa.ca.gov/dataportal/api/odata/Taxable_Sales_Counties
+    auth: none
+    format: odata-json (keyless REST; supports $filter/$orderby/$top + @odata.nextLink paging)
+    license: public
+    status: build-now
+    notes: >-
+      The settlement anchor (absolute $, the dollar LEVEL). NOT the primary target —
+      calibration only. VERIFIED 2026-07-01: absolute taxable-sales $ are NOT on data.ca.gov
+      CKAN (rates/boundaries only) and there is NO data.cdtfa.ca.gov Socrata. The real
+      machine-readable path is the CDTFA data-portal OData API — use the apex host
+      cdtfa.ca.gov (www 301-redirects). Filter County eq 'SAN FRANCISCO' and
+      BusinessGroupCode eq 'C08' for the Food Services & Drinking Places line in whole USD
+      (field TaxableTransactions). Food services IS isolable at COUNTY grain. NOTE on city
+      grain (verified 2026-07-01): the `Taxable_Sales_by_City` set only gives Retail+Food
+      COMBINED + a grand total (cannot serve as C08), BUT the separate `Taxable_Sales_Cities`
+      set DOES carry BusinessGroupCode incl. C08 at CITY grain — useful for sub-county
+      anchors in multi-city counties (e.g. Oakland within Alameda). SF is a consolidated
+      city-county (county row == city, so city grain adds nothing finer for SF specifically).
+      SF C08 is contiguous 2015 Q1..2025 Q4, no gaps, no suppression. Rows carry a DisclosureFlag that
+      masks small county×category cells (not triggered for SF). Ingester:
+      src/eia_pipeline/ingest/cdtfa.py -> fetch_county_taxable_sales / fetch_food_services.
+
+  - id: oi_economic_tracker
+    measures: Consumer card spend by category (Affinity), incl. restaurants, entertainment
+    phase: anchor
+    grain: national/state/county/metro x category
+    cadence: weekly (indexed to Jan-2020 baseline; deviation-space)
+    endpoint: https://github.com/OpportunityInsights/EconomicTracker
+    auth: none
+    format: csv (GitHub)
+    license: public (cite provider + tracker)
+    status: build-now
+    notes: >-
+      Supplies high-frequency %-lift (deviation vs Jan-2020), NOT dollars; county grain
+      has no category split. COVERAGE VERIFIED 2026-07-01: county file 2018-12..2024-06,
+      but county DAILY (freq=d) ends ~2022-06 (later is weekly). So daily calibration uses
+      the 2021+early-2022 Giants slate. Ingester: src/eia_pipeline/ingest/oi_tracker.py.
+
+  - id: tot_annual_statewide
+    measures: Transient Occupancy Tax revenue -> visitor lodging dollars
+    phase: anchor
+    grain: city and county
+    cadence: annual (fiscal year), FY2017-2024
+    endpoint: https://data.ca.gov/dataset/city-transient-occupancy-tax-tot-for-fiscal-years-2017-to-2024
+    auth: none
+    format: csv (CKAN)
+    license: cc-by (CA State Controller)
+    status: build-now
+    notes: Monthly TOT (event-grain) is per-city portals, jurisdiction-dependent.
+
+  # ---------- PHASE 2: INFLOW ----------
+  - id: bart_hourly_od
+    measures: Station-to-station hourly exit counts (transit inflow + origin signal)
+    phase: inflow
+    grain: origin-station x destination-station x hour
+    cadence: hourly (annual files)
+    endpoint: https://www.bart.gov/about/reports/ridership
+    auth: none
+    format: csv.gz per year (+ station abbreviation lookup)
+    license: cc-by
+    status: build-now
+    notes: Best Bay Area inflow signal. Filter dest=venue-station. Mode share is venue-dominated.
+
+  - id: pems_flow
+    measures: Freeway loop-detector vehicle counts (FLOW), + occupancy, speed
+    phase: inflow
+    grain: VDS station x 5-min (agg to hourly/daily)
+    cadence: 5-min real-time + 10yr archive
+    endpoint: https://pems.dot.ca.gov/
+    auth: free account (1-2 business day approval)
+    format: station .txt / bulk
+    license: public (Caltrans)
+    status: key-needed
+    notes: District 4 = Bay Area (~4600 loops), District 7 = LA. Regional inflow, not last-mile. Counts vehicles, not people.
+
+  # ---------- PHASE 3: ON-SITE / PRESENCE ----------
+  - id: esmr_flow
+    measures: Wastewater treatment-plant effluent/influent flow -> presence proxy
+    phase: onsite
+    grain: facility x day (frequency varies by permit)
+    cadence: daily where reported (some monthly)
+    endpoint: https://data.ca.gov/dataset/  # "Water Quality - Effluent - eSMR Data"
+    auth: none
+    format: csv/parquet + CKAN DataStore API
+    license: public
+    status: build-now
+    notes: Filter parameter=flow + facility serving venue sewershed. Needs weather control (see open_meteo).
+
+  - id: sentinel2_lotfill
+    measures: Parking lot-fill INDEX (not car counts) from 10m optical imagery
+    phase: onsite
+    grain: AOI (venue lot) x revisit (~5-day)
+    cadence: ~5-day, ~10:30 local overpass
+    endpoint: https://dataspace.copernicus.eu/  # or Google Earth Engine
+    auth: free account (Copernicus) / GEE
+    format: raster
+    license: free (Copernicus)
+    status: key-needed
+    notes: Isolated-lot, daytime, recurring venues ONLY. Cannot count individual cars.
+
+  - id: foot_traffic_advan
+    measures: CBG/POI visit patterns (on-site activity) — DEMOTED
+    phase: onsite
+    grain: CBG/POI
+    cadence: monthly
+    endpoint: n/a  # Dewey channel unavailable; Advan direct / AWS Data Exchange
+    auth: paid
+    format: csv
+    license: commercial (ML/storage terms require review)
+    status: paid-inquire
+    notes: See decisions D2. Nice-to-have. Spectus (academic) is the likeliest substitute.
+
+  # ---------- PHASE 1: ANTICIPATION ----------
+  - id: wikipedia_pageviews
+    measures: Article pageviews -> pre-event attention proxy
+    phase: anticipation
+    grain: article x day
+    cadence: daily
+    endpoint: https://wikimedia.org/api/rest_v1/  # Pageviews API
+    auth: none
+    format: json
+    license: cc0/public
+    status: build-now
+
+  - id: seatgeek_pricing
+    measures: Event listings + secondary ticket prices (willingness-to-pay)
+    phase: anticipation
+    grain: event
+    cadence: on-demand
+    endpoint: https://platform.seatgeek.com/
+    auth: free API key
+    format: json
+    license: commercial (review terms)
+    status: key-needed
+
+  - id: airdna
+    measures: Short-term-rental price + occupancy -> lodging revenue (near-dollar)
+    phase: anticipation/anchor
+    grain: zip/market x day
+    cadence: daily
+    endpoint: https://www.airdna.co/data
+    auth: paid
+    format: csv/api
+    license: commercial
+    status: paid-inquire
+    notes: Affordable. Reaches event-day resolution for lodging dollars.
+
+  # ---------- CONTROLS / DENOMINATORS ----------
+  - id: open_meteo
+    measures: Precipitation, soil moisture (multi-depth), ET, temperature, snow
+    phase: control
+    grain: lat/lon x hour/day (ERA5-Land ~9km)
+    cadence: hourly, 1950-present
+    endpoint: https://archive-api.open-meteo.com/v1/archive
+    auth: none
+    format: json/csv
+    license: cc-by-4.0
+    status: build-now
+    notes: Non-commercial free <=10k calls/day. Drives wastewater residual + confounder control. Needs plant lat/lon (see crosswalk).
+
+  - id: census_acs
+    measures: CBG demographics (denominators for normalization)
+    phase: control
+    grain: block group / tract
+    cadence: annual
+    endpoint: https://api.census.gov/data
+    auth: free API key
+    format: json
+    license: public
+    status: key-needed
+
+  - id: noaa_ncei
+    measures: Station precipitation (gauge ground-truth for Open-Meteo, optional)
+    phase: control
+    grain: station x day
+    cadence: daily
+    endpoint: https://www.ncdc.noaa.gov/cdo-web/
+    auth: free token
+    format: json/csv
+    license: public
+    status: key-needed
+    notes: Optional validation of ERA5-Land reanalysis. Reintroduces missing-data gaps.
+
+  # ---------- EVENT CATALOG (the treatment: what/when/where events happened) ----------
+  - id: mlb_statsapi
+    measures: MLB game schedule -> event dates, first-pitch times, opponent, attendance
+    phase: event-catalog
+    grain: game (team x date)
+    cadence: on-demand (per season)
+    endpoint: https://statsapi.mlb.com/api/v1/schedule
+    auth: none  # public endpoint, NO key/account required
+    format: json
+    license: public (MLB Stats API; personal/non-commercial use, attribute MLB)
+    status: build-now
+    notes: >-
+      Authoritative event catalog for the Giants/Oracle Park corpus venue (teamId=137,
+      venue Oracle Park). Provides exact local first-pitch time (convert gameDate UTC ->
+      America/Los_Angeles) needed to align with BART's local-time OD. Attendance is
+      available per game via the boxscore endpoint (for later calibration). NOT
+      Sports-Reference (which is ToS-restricted per CLAUDE.md) — this is MLB's own API.
+
+  - id: datasf_street_closures
+    measures: Permitted temporary street closures -> street fairs/festivals/races near venue
+    phase: event-catalog
+    grain: permit x day x street-segment (geometry = LineString)
+    cadence: rolling (current + ~18 months forward)
+    endpoint: https://data.sfgov.org/resource/8x25-yybr.json
+    auth: none
+    format: socrata-json (keyless; supports $where within_circle(shape,lat,lon,m) + $select/$group)
+    license: public-domain (Open Data Commons PDDL)
+    status: build-now
+    notes: >-
+      SFMTA temporary street closures. type in {Special Event, Roadway Shared Spaces,
+      Special Traffic Permit}; Special Event carries the fairs. Geo-queryable by radius
+      from Oracle Park. CAVEAT (verified 2026-07-07): CURRENT+FORWARD only (min start
+      ~2025-12), NO historical backfill. So it is (a) a forward-capture
+      / prediction source and (b) a DISCOVERY tool for which recurring fairs sit near the
+      park. Historical fair-days (2016-2025) are backfilled as recurring fixtures instead —
+      see data/raw/street_fairs/street_fairs_near_oracle.csv (dates web-verified per year,
+      incl. COVID cancellations) feeding transform/event_calendar.py.
+
+  - id: dewey_advan
+    measures: Advan Weekly Patterns per-POI foot traffic (on-site presence, visitor origin)
+    phase: onsite
+    grain: POI (ID_STORE) x week; VISITS_BY_EACH_HOUR gives 168 hourly within-week
+    cadence: weekly
+    endpoint: s3://aai-590-group2-capstone/Gold/advan_weekly_patterns/  # team capstone bucket
+    auth: aws (SageMaker execution role reads; lucas IAM user cannot GetObject directly)
+    format: parquet (snappy)
+    license: licensed (Advan via capstone subscription — NOT scraped, NOT a broker; D9-clean)
+    status: have-now
+    notes: >-
+      Reverses D2 (see D10): the on-site presence layer. 2020-01..2026-05. Oracle Park 1km
+      ring extracted to data/raw/advan/oracle_park_1km_weekly.parquet (490 POIs incl. the
+      park + 20 NAICS-722 restaurants/bars). Carries VISITOR_HOME_CBGS (visitor_share input)
+      + dwell (person-hours). Access pattern: SageMaker processing job under the execution
+      role filters/writes to a sagemaker-* bucket, then aws s3 sync local (docs/05).
+
+  - id: mastercard_spendingpulse
+    measures: Daily county all-payment retail DOLLARS by sector (incl. Restaurants)
+    phase: anchor
+    grain: county (SF 06075) x day x sector
+    cadence: monthly refresh; daily values back to 2018
+    endpoint: aws-dataexchange (Marketplace prodview-q27tc3dgqlhew) -> export to S3
+    auth: aws-dataexchange entitlement (subscription requested 2026-07-01, PENDING approval)
+    format: csv (via EXPORT_REVISIONS_TO_S3)
+    license: free listing, approval-gated (Mastercard via AWS Data Exchange)
+    status: contingent-eval
+    notes: >-
+      NOT an anchor we build on (see docs/01, docs/02). If entitlement lands, it is the
+      held-out DAILY-grain validation of the temporal disaggregation — the one source that
+      checks the Chow-Lin/Denton daily SHAPE, not just the quarterly sum we already
+      reconcile to. May not arrive in time; nothing depends on it.

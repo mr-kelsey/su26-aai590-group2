@@ -1,0 +1,45 @@
+event_name,date,lat,lon,dist_km,status
+How Weird Street Faire,2016-05-01,37.7869,-122.399,1.26,happened
+SF Trans March,2016-06-24,37.7828,-122.411,1.96,happened
+Up Your Alley Fair,2016-07-31,37.7725,-122.411,2.02,happened
+Folsom Street Fair,2016-09-25,37.772,-122.4105,2.0,happened
+Sunday Streets (Embarcadero/SoMa),2016-11-13,37.781,-122.399,0.89,happened
+How Weird Street Faire,2017-05-07,37.7869,-122.399,1.26,happened
+SF Trans March,2017-06-23,37.7828,-122.411,1.96,happened
+Up Your Alley Fair,2017-07-30,37.7725,-122.411,2.02,happened
+Folsom Street Fair,2017-09-24,37.772,-122.4105,2.0,happened
+How Weird Street Faire,2018-05-06,37.7869,-122.399,1.26,happened
+SF Trans March,2018-06-22,37.7828,-122.411,1.96,happened
+Up Your Alley Fair,2018-07-29,37.7725,-122.411,2.02,happened
+Sunday Streets (Embarcadero/SoMa),2018-08-19,37.781,-122.399,0.89,happened
+Folsom Street Fair,2018-09-30,37.772,-122.4105,2.0,happened
+How Weird Street Faire,2019-05-05,37.7869,-122.399,1.26,happened
+SF Trans March,2019-06-28,37.7828,-122.411,1.96,happened
+Up Your Alley Fair,2019-07-28,37.7725,-122.411,2.02,happened
+Sunday Streets (Embarcadero/SoMa),2019-08-18,37.781,-122.399,0.89,happened
+Folsom Street Fair,2019-09-29,37.772,-122.4105,2.0,happened
+How Weird Street Faire,2020-05-03,37.7869,-122.399,1.26,virtual
+SF Trans March,2020-06-26,37.7828,-122.411,1.96,virtual
+Up Your Alley Fair,2020-07-26,37.7725,-122.411,2.02,virtual
+Folsom Street Fair,2020-09-27,37.772,-122.4105,2.0,virtual
+SF Trans March,2021-06-25,37.7828,-122.411,1.96,virtual
+Up Your Alley Fair,2021-07-25,37.7725,-122.411,2.02,cancelled
+How Weird Street Faire,2021-09-12,37.7869,-122.399,1.26,happened
+Folsom Street Fair,2021-09-26,37.772,-122.4105,2.0,happened
+SF Trans March,2022-06-24,37.7828,-122.411,1.96,happened
+Up Your Alley Fair,2022-07-31,37.7725,-122.411,2.02,happened
+Sunday Streets (Embarcadero/SoMa),2022-08-21,37.781,-122.399,0.89,happened
+Folsom Street Fair,2022-09-25,37.772,-122.4105,2.0,happened
+How Weird Street Faire,2022-10-15,37.7869,-122.399,1.26,happened
+SF Trans March,2023-06-23,37.7828,-122.411,1.96,happened
+Up Your Alley Fair,2023-07-30,37.7725,-122.411,2.02,happened
+Folsom Street Fair,2023-09-24,37.772,-122.4105,2.0,happened
+How Weird Street Faire,2023-10-14,37.7869,-122.399,1.26,happened
+SF Trans March,2024-06-28,37.7828,-122.411,1.96,happened
+Up Your Alley Fair,2024-07-28,37.7725,-122.411,2.02,happened
+How Weird Street Faire,2024-09-21,37.7869,-122.399,1.26,happened
+Folsom Street Fair,2024-09-29,37.772,-122.4105,2.0,happened
+SF Trans March,2025-06-27,37.7828,-122.411,1.96,happened
+Up Your Alley Fair,2025-07-27,37.7725,-122.411,2.02,happened
+Folsom Street Fair,2025-09-28,37.772,-122.4105,2.0,happened
+Sunday Streets (Embarcadero/SoMa),2025-10-05,37.781,-122.399,0.89,happened
