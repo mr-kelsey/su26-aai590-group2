@@ -522,6 +522,28 @@ def build_occupancy(con, bronze):
          f"lowest ring median visit_share_covered = {worst[1]} in {worst[0]}")
 
 
+# US federal holidays 2022-2026, ACTUAL dates rather than observed-Monday
+# shifts: foot traffic responds to the day itself (July 4 is July 4 even when
+# offices observe the 3rd). Static list, no data source needed.
+US_FED_HOLIDAYS = [
+    "2022-01-01", "2022-01-17", "2022-02-21", "2022-05-30", "2022-06-19",
+    "2022-07-04", "2022-09-05", "2022-10-10", "2022-11-11", "2022-11-24",
+    "2022-12-25",
+    "2023-01-01", "2023-01-16", "2023-02-20", "2023-05-29", "2023-06-19",
+    "2023-07-04", "2023-09-04", "2023-10-09", "2023-11-11", "2023-11-23",
+    "2023-12-25",
+    "2024-01-01", "2024-01-15", "2024-02-19", "2024-05-27", "2024-06-19",
+    "2024-07-04", "2024-09-02", "2024-10-14", "2024-11-11", "2024-11-28",
+    "2024-12-25",
+    "2025-01-01", "2025-01-20", "2025-02-17", "2025-05-26", "2025-06-19",
+    "2025-07-04", "2025-09-01", "2025-10-13", "2025-11-11", "2025-11-27",
+    "2025-12-25",
+    "2026-01-01", "2026-01-19", "2026-02-16", "2026-05-25", "2026-06-19",
+    "2026-07-04", "2026-09-07", "2026-10-12", "2026-11-11", "2026-11-26",
+    "2026-12-25",
+]
+
+
 def build_calendar_day(con, bronze, panel_end):
     mlb = bronze_path(bronze, "mlb_giants_schedule/mlb_giants_home_games.csv")
     fph = ("MIN(first_pitch_hour)"
@@ -588,6 +610,8 @@ def build_calendar_day(con, bronze, panel_end):
                g.game_types, g.opponents,
                p.ballpark_event, c.chase_event, m.moscone_event,
                w.citywide_event, f.street_fair,
+               s.date IN ({", ".join(f"DATE '{d}'" for d in US_FED_HOLIDAYS)})
+                   AS us_federal_holiday,
                (g.date IS NULL AND p.ballpark_event IS NULL) AS clean_control,
                '2022plus' AS era
         FROM spine s
@@ -626,6 +650,145 @@ def build_weather_day(con, bronze):
         GROUP BY 1
     """)
     log(f"weather_day: {con.sql('SELECT COUNT(*) FROM weather_day').fetchone()[0]} days")
+
+
+def build_weather_hour(con, bronze):
+    """HOURLY weather covariates from NOAA LCD v2, SFO only (USW00023234).
+
+    Downtown SF (USW00023272) has ZERO hourly temperature rows in LCD
+    (verified 2026-07-28: SOD/SOM daily summaries only), so there is no
+    downtown-first option at hour grain; the daily panel keeps it for tmax.
+
+    LCD gotchas handled here, documented in the bronze folder README:
+    - DATE is LOCAL STANDARD TIME year-round (UTC-8, never PDT). Advan hours
+      are wall clock, so LST is shifted to America/Los_Angeles wall time.
+      Fall-back day: two obs map into wall-clock hour 1 (averaged); spring-
+      forward day: hour 2 has no obs. Two quirk hours per year, tolerated by
+      the coverage gate.
+    - Keep FM-15 (routine METAR) rows only.
+    - 'T' = trace precip -> 0.0; '*'/'s' QC suffixes stripped before casting.
+    - UNITS: LCD v2 access files are the METRIC edition (deg C / mm / m/s),
+      verified 2026-07-28 (Jan SF hourly temps ~10, i.e. C not F), while
+      weather_day (GHCN standard) is deg F / inches / mph. Converted here to
+      F / inches / mph so every silver weather column shares one convention.
+      The weather_hour_vs_daily gate caught the original mismatch (p95 diff
+      51.6 F-vs-C) and guards the conversion.
+    """
+    lcd = bronze_path(bronze, "noaa_weather_hourly/LCD_*.csv")
+    con.sql(f"""
+        CREATE OR REPLACE TABLE weather_hour AS
+        WITH obs AS (
+            SELECT timezone('America/Los_Angeles',
+                       timezone('UTC', DATE::TIMESTAMP + INTERVAL 8 HOUR))
+                       AS local_ts,
+                   TRY_CAST(regexp_replace(HourlyDryBulbTemperature,
+                       '[^-0-9.]', '', 'g') AS DOUBLE) AS temp,
+                   CASE WHEN trim(HourlyPrecipitation) = 'T' THEN 0.0
+                        ELSE TRY_CAST(regexp_replace(HourlyPrecipitation,
+                            '[^0-9.]', '', 'g') AS DOUBLE) END AS prcp,
+                   TRY_CAST(regexp_replace(HourlyWindSpeed,
+                       '[^0-9.]', '', 'g') AS DOUBLE) AS wind
+            FROM read_csv('{lcd}', union_by_name=true, all_varchar=true)
+            WHERE trim(REPORT_TYPE) = 'FM-15')
+        SELECT local_ts::DATE AS date,
+               hour(local_ts)::SMALLINT AS hour,
+               ROUND(AVG(temp) * 9 / 5 + 32, 1) AS temp_hr,   -- C -> F
+               ROUND(MAX(prcp) / 25.4, 3) AS prcp_hr,         -- mm -> inches
+               ROUND(AVG(wind) * 2.23694, 1) AS wind_hr,      -- m/s -> mph
+               'USW00023234' AS station_used
+        FROM obs
+        WHERE local_ts::DATE BETWEEN DATE '{OCC_START}' AND DATE '{OCC_END}'
+        GROUP BY 1, 2
+    """)
+    n_hours, covered = con.sql(f"""
+        SELECT (DATE '{OCC_END}' - DATE '{OCC_START}' + 1) * 24,
+               COUNT(*) FILTER (temp_hr IS NOT NULL)
+        FROM weather_hour""").fetchone()
+    share = covered / n_hours
+    gate("weather_hour_coverage", share >= 0.95,
+         f"{covered:,}/{n_hours:,} window hours with hourly temp ({share:.1%})")
+    # Same-station check (SFO hourly vs SFO daily TMAX): weather_day.tmax is
+    # downtown-first, and SF microclimates run ~5-10 F apart on warm days,
+    # which would drown the unit signal. Hourly max under-samples a continuous
+    # daily max slightly, so a small tolerance remains.
+    daily = bronze_path(bronze, "noaa_weather/*.csv")
+    p95 = con.sql(f"""
+        SELECT quantile_cont(ABS(h.mx - d.tmax), 0.95)
+        FROM (SELECT date, MAX(temp_hr) AS mx FROM weather_hour GROUP BY 1) h
+        JOIN (SELECT DATE::DATE AS date, MAX(TMAX) AS tmax
+              FROM read_csv('{daily}', union_by_name = true)
+              WHERE STATION = 'USW00023234' GROUP BY 1) d USING (date)
+        WHERE d.tmax IS NOT NULL AND h.mx IS NOT NULL
+    """).fetchone()[0]
+    gate("weather_hour_vs_daily", p95 is not None and p95 <= 4.0,
+         f"p95 |daily max of hourly temp - SFO daily TMAX| = {p95:.1f} F "
+         f"(same station; catches unit mismatches, e.g. the LCD metric "
+         f"edition read as F scores ~50)")
+    log(f"weather_hour: {con.sql('SELECT COUNT(*) FROM weather_hour').fetchone()[0]:,} hours")
+
+
+# Chase Center event windows (hours around tip-off / show start)
+EVENT_PRE_H = 2       # crowd builds from ~2h before tip-off
+EVENT_POST_H = 3      # ~game length + egress after tip-off
+CONCERT_DEFAULT_HOURS = (19, 23)  # setlist.fm has no times; documented default
+
+
+def build_event_hour(con, bronze):
+    """HOUR-grain Chase Center event windows for the occupancy covariates.
+
+    NBA/WNBA home games use the real tip-off hour (start_hour_local from the
+    2026-07-28 ESPN re-pull, which also fixed the UTC +1-day date bug on 904
+    NBA + 63 WNBA rows): flagged window = tip - EVENT_PRE_H .. tip +
+    EVENT_POST_H. Chase concerts have no start times in setlist.fm, so they
+    get the documented default {CONCERT_DEFAULT_HOURS} window. Moscone and
+    citywide events stay day-grain in calendar_day (multi-day conventions).
+    Sparse table: only flagged (date, hour) rows exist.
+    """
+    nba = bronze_path(bronze, "competing_events/nba_warriors_schedule.csv")
+    wnba = bronze_path(bronze, "competing_events/wnba_valkyries_schedule.csv")
+    concerts = bronze_path(bronze, "competing_events/setlistfm_concerts.csv")
+    con.sql(f"""
+        CREATE OR REPLACE TABLE event_hour AS
+        WITH ev AS (
+            SELECT date::DATE AS date, name AS detail, 'nba' AS kind,
+                   TRY_CAST(start_hour_local AS INT) AS tip
+            FROM read_csv('{nba}')
+            WHERE home_game = 'True' AND venue = 'Chase Center'
+            UNION ALL
+            SELECT date::DATE, name, 'wnba', TRY_CAST(start_hour_local AS INT)
+            FROM read_csv('{wnba}')
+            WHERE home_game = 'True' AND venue = 'Chase Center'
+            UNION ALL
+            SELECT date::DATE, artist, 'concert_default', NULL
+            FROM read_csv('{concerts}')
+            WHERE venue = 'Chase Center'),
+        windows AS (
+            SELECT date, detail, kind,
+                   CASE WHEN tip IS NOT NULL THEN GREATEST(tip - {EVENT_PRE_H}, 0)
+                        ELSE {CONCERT_DEFAULT_HOURS[0]} END AS h_lo,
+                   CASE WHEN tip IS NOT NULL THEN LEAST(tip + {EVENT_POST_H}, 23)
+                        ELSE {CONCERT_DEFAULT_HOURS[1]} END AS h_hi
+            FROM ev
+            WHERE date BETWEEN DATE '{OCC_START}' AND DATE '{OCC_END}')
+        SELECT w.date, h.hour::SMALLINT AS hour,
+               TRUE AS chase_event_hour,
+               string_agg(DISTINCT w.kind || ': ' || w.detail, '; ') AS detail
+        FROM windows w
+        JOIN (SELECT UNNEST(generate_series(0, 23)) AS hour) h
+          ON h.hour BETWEEN w.h_lo AND w.h_hi
+        GROUP BY 1, 2
+    """)
+    n, days = con.sql(
+        "SELECT COUNT(*), COUNT(DISTINCT date) FROM event_hour").fetchone()
+    orphan = con.sql("""
+        SELECT COUNT(DISTINCT e.date) FROM event_hour e
+        LEFT JOIN calendar_day c USING (date)
+        WHERE c.chase_event IS NULL
+    """).fetchone()[0]
+    gate("event_hour_consistency", orphan == 0,
+         f"{orphan} event_hour dates not flagged chase_event in calendar_day "
+         f"({n} flagged hours over {days} days)")
+    log(f"event_hour: {n:,} flagged hours across {days} Chase event days")
 
 
 def build_transit_day(con, bronze):
@@ -894,7 +1057,7 @@ def crosscheck_luke_residuals(con, residuals):
 TABLES = ["poi_rings", "visits_ring_day", "calendar_day", "weather_day",
           "transit_day", "bikeshare_ring_day", "panel_ring_day",
           "occupancy_ring_hour", "occupancy_poi_hour",
-          "occupancy_poi_week_coverage"]
+          "occupancy_poi_week_coverage", "weather_hour", "event_hour"]
 
 
 def write_outputs(con, out, bronze, started):
@@ -911,7 +1074,10 @@ def write_outputs(con, out, bronze, started):
         "params": {"ring_edges_m": RING_EDGES_M, "ring_labels": RING_LABELS,
                    "panel_start": PANEL_START, "panel_end": PANEL_END,
                    "occ_start": OCC_START, "occ_end": OCC_END,
-                   "food_naics_prefix": FOOD_NAICS_PREFIX},
+                   "food_naics_prefix": FOOD_NAICS_PREFIX,
+                   "event_pre_h": EVENT_PRE_H, "event_post_h": EVENT_POST_H,
+                   "concert_default_hours": CONCERT_DEFAULT_HOURS,
+                   "lcd_station": "USW00023234"},
         "tables": counts,
         "qa": QA,
         "bronze_snapshot": bronze_snapshot(bronze),
@@ -972,6 +1138,17 @@ spanned, about 4 at the ballpark. Never add visitor-hours to visits.
   open the whole window. WEAK IN RING 1 (6 POIs; only ~21 of its 37 report
   hourly at all): prefer the raw + coverage columns there.
 
+Hour-grain covariates (same occupancy window):
+
+- `weather_hour.parquet` - NOAA LCD hourly temp/precip/wind, SFO only
+  (downtown has no hourly obs), LST converted to wall clock.
+- `event_hour.parquet` - SPARSE Chase Center event windows: NBA/WNBA real
+  tip-offs -{m['params']['event_pre_h']}h..+{m['params']['event_post_h']}h,
+  concerts default {m['params']['concert_default_hours']} (setlist.fm has no
+  times). Moscone/citywide stay day-grain in calendar_day.
+- `calendar_day.us_federal_holiday` - actual holiday dates, static in-code
+  list.
+
 Hourly is null for about 38% of POI-weeks and that is never imputed. The gap is
 not random (74.9% of 10-99 visit POIs vs 11.0% of 1000+), so filling it would
 bias small POIs. Weakest cell in the design: ring-1 food services rests on about
@@ -1014,6 +1191,8 @@ def main():
     panel_end = build_visits_ring_day(con, args.bronze)
     build_calendar_day(con, args.bronze, panel_end)
     build_weather_day(con, args.bronze)
+    build_weather_hour(con, args.bronze)
+    build_event_hour(con, args.bronze)
     build_transit_day(con, args.bronze)
     build_bikeshare_ring_day(con, args.bronze)
     build_panel(con, panel_end)
