@@ -363,6 +363,57 @@ edges symmetric with no self-loops; at least half the nodes carry a catchment
 edge; target row count equals the filtered silver count; splits partition the
 window with no overlap; every clean-control training hour is truly non-game.
 
+## 8c. Covariates: hourly weather and competing-event windows (added 2026-07-28)
+
+The GNN forecaster conditions on covariates instead of shrinking the control
+pool, so the covariates must be present and accurate at the model's grain.
+Steve approved two data-ingest-gate items on 2026-07-28: NOAA LCD hourly
+weather, and an ESPN re-pull carrying event start times.
+
+**Findings made during this work:**
+
+1. **The shipped NBA/WNBA dates carried a UTC +1-day bug.** ESPN event
+   datetimes are UTC (a 19:00 PT tip is 02:00Z the next day) and the original
+   ingest truncated the string to a date: 904 of 992 NBA rows and 63 of 93
+   WNBA rows were dated one day late. This is the MLB `gameDate` lesson
+   repeated on a second feed. Fixed in the re-pull (`date` is now the local
+   game date; `start_utc` and `start_hour_local` added; `utc_date_was` keeps
+   the old value for audit). Every `chase_event` day flag moves to the correct
+   date on rebuild. The estimator is unaffected (`clean_control` never used
+   chase), but the chase covariate is now right.
+2. **LCD v2 access files are the METRIC edition** (deg C / mm / m/s) while
+   the GHCN daily files are standard (deg F / inches / mph). The
+   `weather_hour_vs_daily` gate caught this (p95 diff 51.6 on first build);
+   silver converts hourly to F / inches / mph so the layer has one convention.
+3. **Downtown SF (USW00023272) has no hourly observations at all** (its LCD
+   file is daily summaries), so hourly weather is SFO-only, about 12 miles
+   from the park. Fine for covariate use; the daily panel keeps downtown-first
+   tmax.
+
+**New silver tables (occupancy window):**
+
+- `weather_hour`: date x hour temp/precip/wind (F / inches / mph), LST
+  converted to America/Los_Angeles wall clock. Gates: coverage >= 95% of
+  window hours (measured 99.5%); same-station daily-max cross-check
+  (p95 = 2.0 F).
+- `event_hour`: SPARSE Chase Center windows. NBA/WNBA home games use the real
+  tip-off: hours tip-2 through tip+3. Concerts have no times in setlist.fm and
+  use a documented default 19:00-23:00. Moscone/citywide stay day-grain.
+  Gate: every flagged date is a chase_event day.
+- `calendar_day.us_federal_holiday`: actual holiday dates (not observed-day
+  shifts; traffic responds to the day itself), static in-code list 2022-2026.
+
+**Gold changes:**
+
+- `gnn_time_hour` gains: tmin/tavg/awnd (were already in the panel),
+  `us_federal_holiday`, hourly `temp_hr`/`prcp_hr`/`wind_hr`, and
+  `chase_event_hour`. New gates: `gnn_weather_coverage` (>= 95% of spine
+  hours), `gnn_event_hour_within_day` (hourly flag implies the day flag).
+- `occupancy_event_study` estimator unchanged. A REPORT-ONLY
+  `control_pool_sensitivity` entry recomputes the ring-1 peak with a strict
+  pool (chase/moscone days excluded from controls) and records the percent
+  change; a large delta is a team conversation, not a build failure.
+
 ## 9. Risks
 
 **Build time.** Measured 2026-07-28: `build_occupancy()` takes about 8 minutes

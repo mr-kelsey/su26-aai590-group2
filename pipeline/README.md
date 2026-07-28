@@ -41,6 +41,17 @@ Occupancy (visitor-hours) tables, added 2026-07-28:
   2023 Q1 (+69% on a fixed POI set), so 2022 visitor-hours are excluded. The
   daily tables are unaffected.
 
+Hour-grain covariate tables (added 2026-07-28, same occupancy window):
+
+- `weather_hour.parquet` - NOAA LCD hourly temp/precip/wind, SFO only
+  (downtown has zero hourly obs). LCD ships METRIC; converted to F/inches/mph
+  to match weather_day. LST converted to wall clock.
+- `event_hour.parquet` - sparse Chase Center event windows from real NBA/WNBA
+  tip-offs (the 2026-07-28 ESPN re-pull also fixed a UTC +1-day date bug on
+  904 NBA + 63 WNBA rows, so chase_event day flags moved to their correct
+  dates); concerts use a documented 19:00-23:00 default.
+- `calendar_day.us_federal_holiday` - static in-code list, actual dates.
+
 QA gates fail the build loudly: Monday-aligned Advan weeks, VISITS_BY_DAY
 parse + tolerance vs VISIT_COUNTS, panel shape (days x rings, no dups), full
 visit coverage, a reproduction of the known Aug-2024 Bay Wheels game-day
@@ -81,13 +92,16 @@ the planned v1 and must beat it. Documented stubs: dollar calibration
 (blocked on multi-year CDTFA disaggregation) and the impact-function model
 itself (training runs downstream on SageMaker; registry tie-in unchanged).
 
-GNN contract (design doc section 8b): `gnn_nodes` (rings 1-4, 2.5 km),
+GNN contract (design doc sections 8b-8c): `gnn_nodes` (rings 1-4, 2.5 km),
 `gnn_edges_spatial` (8-NN haversine), `gnn_edges_catchment`
 (VISITOR_HOME_CBGS cosine; the ONE bronze input gold takes, via
-`--bronze-advan`), `gnn_time_hour` (hourly covariate spine with
-train/val/test splits), `gnn_target_node_hour` (sparse visitor-hours),
+`--bronze-advan`), `gnn_time_hour` (hourly covariate spine: game treatment,
+day + HOURLY weather, holiday, day + HOURLY Chase event flags, train/val/test
+splits), `gnn_target_node_hour` (sparse visitor-hours),
 `gnn_node_week_coverage` (true-zero vs unknown mask), `gnn_game_labels`
-(v0 lifts for the generalization head).
+(v0 lifts for the generalization head). The occupancy event study also
+records a report-only `control_pool_sensitivity` (strict vs default control
+pool) in the manifest.
 
 QA gates: full matched-control coverage, positive and significant core-ring
 effect, outward decay, occupancy-event-study coverage / peak-near-pitch /
