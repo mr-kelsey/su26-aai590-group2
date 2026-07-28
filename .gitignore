@@ -219,3 +219,10 @@ __marimo__/
 
 # user defined
 data/
+
+# --- eia-nowcast import ---
+# macOS finder droppings
+.DS_Store
+# one-time S3 upload staging (derived parquet; lives in S3, not git)
+bart_seed_upload/
+bart_seed_upload.zip
