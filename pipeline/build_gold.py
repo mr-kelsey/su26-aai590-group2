@@ -335,7 +335,7 @@ def build_occupancy_event_study(con, silver):
                    row_number() OVER (
                        PARTITION BY g.game_date, g.ring_id, g.measure,
                                     g.relative_hour
-                       ORDER BY abs(date_diff('day', g.game_date, c.date))) AS rk
+                       ORDER BY abs(date_diff('day', g.game_date, c.date)), c.date) AS rk
             FROM occ_game_window g
             JOIN occ_long c
               ON c.ring_id = g.ring_id AND c.measure = g.measure
@@ -402,6 +402,71 @@ def build_occupancy_event_study(con, silver):
          f"ring-5 mean t = {outer_t:.2f}, placebo ring must stay null (< 2)")
     n = con.sql("SELECT COUNT(*) FROM occupancy_event_study").fetchone()[0]
     log(f"occupancy_event_study: {n} rows")
+
+    # REPORT-ONLY control-pool sensitivity: clean_control keeps Chase/Moscone
+    # days in the pool by design (they are covariates). If those events
+    # inflate control baselines, the lift is understated. Recompute the ring-1
+    # visitor_hours curve with a STRICT pool (also excluding chase/moscone
+    # days) and report the peak-effect change. Not a gate: a big delta is a
+    # team conversation about the estimator, not a broken build.
+    strict = con.sql(f"""
+        WITH strict_base AS (
+            SELECT game_date, ring_id, measure, relative_hour,
+                   AVG(cv) AS baseline, COUNT(cv) AS n
+            FROM (
+                SELECT g.game_date, g.ring_id, g.measure, g.relative_hour,
+                       c.value AS cv,
+                       row_number() OVER (
+                           PARTITION BY g.game_date, g.ring_id, g.measure,
+                                        g.relative_hour
+                           ORDER BY abs(date_diff('day', g.game_date, c.date)), c.date) AS rk
+                FROM occ_game_window g
+                JOIN occ_long c
+                  ON c.ring_id = g.ring_id AND c.measure = g.measure
+                 AND c.hour = hour(g.ts) AND c.dow = g.dow
+                 AND c.clean_control
+                 AND abs(date_diff('day', g.game_date, c.date))
+                     <= {MATCH_MAX_WINDOW_DAYS}
+                 AND c.value IS NOT NULL
+                JOIN panel_dates pd ON pd.date = c.date
+                WHERE pd.date NOT IN (
+                    SELECT date FROM panel
+                    WHERE chase_event IS NOT NULL
+                       OR moscone_event IS NOT NULL)
+                  AND g.ring_id = 1 AND g.measure = 'visitor_hours')
+            WHERE rk <= {MATCH_K}
+            GROUP BY 1, 2, 3, 4)
+        SELECT s.relative_hour,
+               AVG(g.value - s.baseline) AS strict_effect
+        FROM occ_game_window g
+        JOIN strict_base s
+          ON s.game_date = g.game_date AND s.ring_id = g.ring_id
+         AND s.measure = g.measure AND s.relative_hour = g.relative_hour
+        WHERE s.n >= {MIN_CONTROLS}
+        GROUP BY 1
+    """).fetchall()
+    strict_d = dict(strict)
+    peak_default, peak_rel2 = con.sql("""
+        SELECT effect, relative_hour FROM occupancy_event_study
+        WHERE ring_id = 1 AND measure = 'visitor_hours' AND slice = 'all'
+        ORDER BY effect DESC LIMIT 1""").fetchone()
+    peak_strict = strict_d.get(peak_rel2)
+    if peak_strict is not None and peak_default:
+        delta_pct = 100.0 * (peak_strict - peak_default) / peak_default
+        QA["control_pool_sensitivity"] = {
+            "ok": True,
+            "detail": (f"ring-1 peak effect {peak_default:.0f} (default pool) vs "
+                       f"{peak_strict:.0f} (strict, chase/moscone excluded): "
+                       f"{delta_pct:+.1f}%"
+                       + ("; over 10%, discuss the control pool with the team"
+                          if abs(delta_pct) > 10 else "")),
+        }
+        log(f"control-pool sensitivity: peak {peak_default:.0f} -> "
+            f"{peak_strict:.0f} strict ({delta_pct:+.1f}%)")
+    else:
+        QA["control_pool_sensitivity"] = {
+            "ok": True, "detail": "strict pool too thin at the peak hour to compare"}
+        log("control-pool sensitivity: strict pool too thin at the peak hour")
 
 
 def build_dollars(con):
@@ -472,7 +537,7 @@ def build_gnn_tables(con, silver, bronze_advan):
         knn AS (
             SELECT src, dst, edge_dist_m,
                    row_number() OVER (PARTITION BY src
-                                      ORDER BY edge_dist_m) AS rk
+                                      ORDER BY edge_dist_m, dst) AS rk
             FROM pairs)
         SELECT LEAST(src, dst) AS a, GREATEST(src, dst) AS b,
                MIN(edge_dist_m) AS edge_dist_m
@@ -534,9 +599,9 @@ def build_gnn_tables(con, silver, bronze_advan):
             WHERE d.dot / (na.nrm * nb.nrm) >= {MIN_COS}),
         ranked AS (
             SELECT src, dst, cos_sim, row_number() OVER (
-                       PARTITION BY src ORDER BY cos_sim DESC) AS rk_s,
+                       PARTITION BY src ORDER BY cos_sim DESC, dst) AS rk_s,
                    row_number() OVER (
-                       PARTITION BY dst ORDER BY cos_sim DESC) AS rk_d
+                       PARTITION BY dst ORDER BY cos_sim DESC, src) AS rk_d
             FROM cos)
         SELECT src AS a, dst AS b, cos_sim
         FROM ranked WHERE rk_s <= {K_CATCH} OR rk_d <= {K_CATCH}
@@ -553,6 +618,11 @@ def build_gnn_tables(con, silver, bronze_advan):
          f"({share:.0%}), want >= 50%")
 
     # --- hourly time spine with covariates and splits ------------------------
+    # Covariate additions (2026-07-28): full daily weather (tmin/tavg/awnd),
+    # the holiday flag, HOURLY weather (silver weather_hour: SFO LCD, F/in/mph),
+    # and HOURLY Chase windows (silver event_hour: real tip-offs from the ESPN
+    # re-pull that also fixed the UTC +1-day date bug; concerts use the
+    # documented 19-23 default). Day flags stay for day-grain consumers.
     split_case = " ".join(
         f"WHEN date BETWEEN DATE '{a}' AND DATE '{b}' THEN '{k}'"
         for k, (a, b) in SPLITS.items())
@@ -572,13 +642,21 @@ def build_gnn_tables(con, silver, bronze_advan):
                p.chase_event IS NOT NULL AS chase_day,
                p.moscone_event IS NOT NULL AS moscone_day,
                p.citywide_event IS NOT NULL AS citywide_day,
-               p.tmax, p.prcp,
+               p.us_federal_holiday,
+               p.tmax, p.tmin, p.tavg, p.prcp, p.awnd,
+               w.temp_hr, w.prcp_hr, w.wind_hr,
+               COALESCE(e.chase_event_hour, FALSE) AS chase_event_hour,
                CASE {split_case} END AS split
         FROM panel_dates d
         JOIN (SELECT DISTINCT date, ballpark_event, chase_event,
-                     moscone_event, citywide_event, tmax, prcp
+                     moscone_event, citywide_event, us_federal_holiday,
+                     tmax, tmin, tavg, prcp, awnd
               FROM panel) p USING (date)
         CROSS JOIN (SELECT UNNEST(generate_series(0, 23)) AS hour) h
+        LEFT JOIN '{s}/weather_hour.parquet' w
+               ON w.date = d.date AND w.hour = h.hour
+        LEFT JOIN '{s}/event_hour.parquet' e
+               ON e.date = d.date AND e.hour = h.hour
         WHERE d.date BETWEEN DATE '{SPLITS["train"][0]}'
                          AND DATE '{SPLITS["test"][1]}'
     """)
@@ -592,6 +670,16 @@ def build_gnn_tables(con, silver, bronze_advan):
         WHERE clean_control AND giants_home""").fetchone()[0]
     gate("gnn_no_leakage", leak == 0,
          f"{leak} hours flagged clean_control on a game day")
+    wx_cov = con.sql("""
+        SELECT AVG((temp_hr IS NOT NULL)::INT) FROM gnn_time_hour
+    """).fetchone()[0]
+    gate("gnn_weather_coverage", wx_cov is not None and wx_cov >= 0.95,
+         f"{wx_cov:.1%} of spine hours carry hourly temp")
+    ch = con.sql("""
+        SELECT COUNT(*) FROM gnn_time_hour
+        WHERE chase_event_hour AND NOT chase_day""").fetchone()[0]
+    gate("gnn_event_hour_within_day", ch == 0,
+         f"{ch} chase_event_hour rows outside a chase_day")
 
     # --- sparse targets + coverage mask, node set only -----------------------
     con.sql(f"""
