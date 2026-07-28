@@ -66,6 +66,22 @@ MATCH_MAX_WINDOW_DAYS = 120  # hard cap on how far a control may sit from the ga
 MIN_CONTROLS = 5          # game-ring cells with fewer matches get NULL baseline
 RING_MID_M = {1: 125, 2: 375, 3: 750, 4: 1750, 5: 3750}  # ring midpoints, meters
 
+# Hourly occupancy event study (visitor-hours; window is silver's OCC_*)
+OCC_MEASURES = ["visitor_hours", "visitor_hours_ex_venue",
+                "visitor_hours_food", "visitor_hours_balanced"]
+REL_HOUR_MIN = -6         # hours before first pitch
+REL_HOUR_MAX = 8          # hours after first pitch (crosses midnight for night games)
+
+# GNN data contract (docs/design/2026-07-28-advan-occupancy.md section 8b)
+VENUE_POI_NAME = "Oracle Park"  # must match build_silver.VENUE_POI_NAME
+GNN_MAX_RING = 4          # nodes = POIs inside 2.5 km (rings 1-4)
+K_SPATIAL = 8             # spatial k-nearest-neighbor edges per node
+K_CATCH = 8               # catchment-similarity edges per node
+MIN_COS = 0.1             # floor on catchment cosine similarity
+SPLITS = {"train": ("2023-01-02", "2024-12-31"),
+          "val":   ("2025-01-01", "2025-06-30"),
+          "test":  ("2025-07-01", "2025-12-31")}
+
 QA = {}
 
 
@@ -242,6 +258,217 @@ def build_distance_decay(con):
          f"visits_food pct lift: ring 1 = {inner}, ring 5 = {outer}")
 
 
+def build_occupancy_event_study(con, silver):
+    """Hourly event study on VISITOR-HOURS (occupancy), 2023+ window.
+
+    visitor_hours is presence per hourly bucket, not a headcount (a fan at a
+    3-hour game counts in ~4 buckets); see the silver README and the design
+    doc. Estimator mirrors game_effects v0 exactly, one addition: controls
+    match on clock hour as well as day-of-week, so the counterfactual for
+    19:00 on a game Friday is 19:00 on the nearest clean Fridays.
+
+    Two hour-grain traps handled here:
+    - relative_hour is computed on TIMESTAMPS. A 19:00 first pitch + 8 hours
+      is 03:00 the NEXT calendar day; integer hour math within a date would
+      mislabel it.
+    - Doubleheaders (n_games > 1) are excluded: two first pitches make
+      relative_hour undefined. The day-grain code's MIN(first_pitch_hour) is
+      harmless at day grain, wrong here.
+    """
+    con.sql("""
+        CREATE OR REPLACE TABLE panel_dates AS
+        SELECT DISTINCT date, giants_home, n_games, first_pitch_hour,
+               day_night, clean_control, dow
+        FROM panel
+    """)
+    con.sql(f"""
+        CREATE OR REPLACE TABLE occ_hour AS
+        SELECT o.*, o.date + INTERVAL (o.hour) HOUR AS ts,
+               c.giants_home, c.n_games, c.first_pitch_hour, c.day_night,
+               c.clean_control, c.dow
+        FROM '{silver.rstrip('/')}/occupancy_ring_hour.parquet' o
+        JOIN panel_dates c USING (date)
+    """)
+    n_dh = con.sql("""
+        SELECT COUNT(DISTINCT date) FROM occ_hour
+        WHERE giants_home AND n_games > 1""").fetchone()[0]
+    QA["occupancy_es_doubleheaders_excluded"] = {
+        "ok": True, "detail": f"{n_dh} doubleheader days excluded"}
+    log(f"occupancy event study: excluding {n_dh} doubleheader days")
+
+    measure_rows = " UNION ALL ".join(
+        f"SELECT ring_id, ring, date, hour, ts, '{m}' AS measure, "
+        f"{m}::DOUBLE AS value, giants_home, n_games, first_pitch_hour, "
+        f"day_night, clean_control, dow FROM occ_hour"
+        for m in OCC_MEASURES)
+    con.sql(f"CREATE OR REPLACE TABLE occ_long AS {measure_rows}")
+
+    # Night games: relative_hour +6..+8 lands at 01:00-03:00 the next calendar
+    # date. Those rows exist in occ_long under the NEXT date; pull them by
+    # timestamp against the game's first pitch, never by (date, hour) math.
+    con.sql(f"""
+        CREATE OR REPLACE TABLE occ_game_window AS
+        WITH pitches AS (
+            SELECT DISTINCT date AS game_date, dow, day_night,
+                   date + INTERVAL (first_pitch_hour) HOUR AS pitch_ts
+            FROM occ_hour
+            WHERE giants_home AND n_games = 1 AND first_pitch_hour IS NOT NULL)
+        SELECT l.ring_id, l.ring, l.measure, p.game_date, p.dow, p.day_night,
+               l.ts, l.hour, l.value,
+               CAST(date_diff('hour', p.pitch_ts, l.ts) AS INT) AS relative_hour
+        FROM occ_long l
+        JOIN pitches p
+          ON l.ts BETWEEN p.pitch_ts + INTERVAL ({REL_HOUR_MIN}) HOUR
+                      AND p.pitch_ts + INTERVAL ({REL_HOUR_MAX}) HOUR
+    """)
+
+    # Matched-control baseline per (game, ring, measure, relative_hour):
+    # nearest MATCH_K clean-control days, same dow, same clock hour.
+    con.sql(f"""
+        CREATE OR REPLACE TABLE occ_baseline AS
+        SELECT game_date, ring_id, measure, relative_hour,
+               AVG(cv) AS baseline, STDDEV_SAMP(cv) AS baseline_sd,
+               COUNT(cv) AS baseline_n
+        FROM (
+            SELECT g.game_date, g.ring_id, g.measure, g.relative_hour,
+                   c.value AS cv,
+                   row_number() OVER (
+                       PARTITION BY g.game_date, g.ring_id, g.measure,
+                                    g.relative_hour
+                       ORDER BY abs(date_diff('day', g.game_date, c.date)), c.date) AS rk
+            FROM occ_game_window g
+            JOIN occ_long c
+              ON c.ring_id = g.ring_id AND c.measure = g.measure
+             AND c.hour = hour(g.ts) AND c.dow = g.dow
+             AND c.clean_control
+             AND abs(date_diff('day', g.game_date, c.date))
+                 <= {MATCH_MAX_WINDOW_DAYS}
+             AND c.value IS NOT NULL)
+        WHERE rk <= {MATCH_K}
+        GROUP BY 1, 2, 3, 4
+    """)
+
+    con.sql(f"""
+        CREATE OR REPLACE TABLE occupancy_event_study AS
+        WITH per_game AS (
+            SELECT g.ring_id, g.ring, g.measure, g.relative_hour, g.day_night,
+                   g.value - b.baseline AS lift
+            FROM occ_game_window g
+            JOIN occ_baseline b
+              ON b.game_date = g.game_date AND b.ring_id = g.ring_id
+             AND b.measure = g.measure AND b.relative_hour = g.relative_hour
+            WHERE b.baseline_n >= {MIN_CONTROLS}),
+        sliced AS (
+            SELECT ring_id, ring, measure, relative_hour, 'all' AS slice, lift
+            FROM per_game
+            UNION ALL
+            SELECT ring_id, ring, measure, relative_hour, day_night, lift
+            FROM per_game WHERE day_night IS NOT NULL)
+        SELECT ring_id, ring, measure, relative_hour, slice,
+               AVG(lift) AS effect,
+               STDDEV_SAMP(lift) / sqrt(COUNT(*)) AS se,
+               AVG(lift) / NULLIF(STDDEV_SAMP(lift) / sqrt(COUNT(*)), 0) AS t,
+               COUNT(*) AS n_games
+        FROM sliced
+        GROUP BY 1, 2, 3, 4, 5
+    """)
+
+    thin = con.sql(f"""
+        SELECT COUNT(*) FROM (
+            SELECT g.game_date, g.ring_id, g.measure, g.relative_hour
+            FROM occ_game_window g
+            LEFT JOIN occ_baseline b
+              ON b.game_date = g.game_date AND b.ring_id = g.ring_id
+             AND b.measure = g.measure AND b.relative_hour = g.relative_hour
+            WHERE COALESCE(b.baseline_n, 0) < {MIN_CONTROLS}
+            GROUP BY 1, 2, 3, 4)
+    """).fetchone()[0]
+    gate("occupancy_es_coverage", thin == 0,
+         f"{thin} game-ring-measure-hour cells with < {MIN_CONTROLS} controls")
+
+    peak_rel, peak_eff = con.sql("""
+        SELECT relative_hour, ROUND(effect, 1) FROM occupancy_event_study
+        WHERE ring_id = 1 AND measure = 'visitor_hours' AND slice = 'all'
+        ORDER BY effect DESC LIMIT 1""").fetchone()
+    gate("occupancy_es_peak_at_zero", -1 <= peak_rel <= 2,
+         f"ring-1 visitor_hours peak effect {peak_eff} at relative_hour "
+         f"{peak_rel}, want in [-1, +2]")
+
+    outer_t = con.sql("""
+        SELECT AVG(effect / NULLIF(se, 0)) FROM occupancy_event_study
+        WHERE ring_id = 5 AND measure = 'visitor_hours' AND slice = 'all'
+    """).fetchone()[0]
+    gate("occupancy_es_outer_null", outer_t is not None and outer_t < 2.0,
+         f"ring-5 mean t = {outer_t:.2f}, placebo ring must stay null (< 2)")
+    n = con.sql("SELECT COUNT(*) FROM occupancy_event_study").fetchone()[0]
+    log(f"occupancy_event_study: {n} rows")
+
+    # REPORT-ONLY control-pool sensitivity: clean_control keeps Chase/Moscone
+    # days in the pool by design (they are covariates). If those events
+    # inflate control baselines, the lift is understated. Recompute the ring-1
+    # visitor_hours curve with a STRICT pool (also excluding chase/moscone
+    # days) and report the peak-effect change. Not a gate: a big delta is a
+    # team conversation about the estimator, not a broken build.
+    strict = con.sql(f"""
+        WITH strict_base AS (
+            SELECT game_date, ring_id, measure, relative_hour,
+                   AVG(cv) AS baseline, COUNT(cv) AS n
+            FROM (
+                SELECT g.game_date, g.ring_id, g.measure, g.relative_hour,
+                       c.value AS cv,
+                       row_number() OVER (
+                           PARTITION BY g.game_date, g.ring_id, g.measure,
+                                        g.relative_hour
+                           ORDER BY abs(date_diff('day', g.game_date, c.date)), c.date) AS rk
+                FROM occ_game_window g
+                JOIN occ_long c
+                  ON c.ring_id = g.ring_id AND c.measure = g.measure
+                 AND c.hour = hour(g.ts) AND c.dow = g.dow
+                 AND c.clean_control
+                 AND abs(date_diff('day', g.game_date, c.date))
+                     <= {MATCH_MAX_WINDOW_DAYS}
+                 AND c.value IS NOT NULL
+                JOIN panel_dates pd ON pd.date = c.date
+                WHERE pd.date NOT IN (
+                    SELECT date FROM panel
+                    WHERE chase_event IS NOT NULL
+                       OR moscone_event IS NOT NULL)
+                  AND g.ring_id = 1 AND g.measure = 'visitor_hours')
+            WHERE rk <= {MATCH_K}
+            GROUP BY 1, 2, 3, 4)
+        SELECT s.relative_hour,
+               AVG(g.value - s.baseline) AS strict_effect
+        FROM occ_game_window g
+        JOIN strict_base s
+          ON s.game_date = g.game_date AND s.ring_id = g.ring_id
+         AND s.measure = g.measure AND s.relative_hour = g.relative_hour
+        WHERE s.n >= {MIN_CONTROLS}
+        GROUP BY 1
+    """).fetchall()
+    strict_d = dict(strict)
+    peak_default, peak_rel2 = con.sql("""
+        SELECT effect, relative_hour FROM occupancy_event_study
+        WHERE ring_id = 1 AND measure = 'visitor_hours' AND slice = 'all'
+        ORDER BY effect DESC LIMIT 1""").fetchone()
+    peak_strict = strict_d.get(peak_rel2)
+    if peak_strict is not None and peak_default:
+        delta_pct = 100.0 * (peak_strict - peak_default) / peak_default
+        QA["control_pool_sensitivity"] = {
+            "ok": True,
+            "detail": (f"ring-1 peak effect {peak_default:.0f} (default pool) vs "
+                       f"{peak_strict:.0f} (strict, chase/moscone excluded): "
+                       f"{delta_pct:+.1f}%"
+                       + ("; over 10%, discuss the control pool with the team"
+                          if abs(delta_pct) > 10 else "")),
+        }
+        log(f"control-pool sensitivity: peak {peak_default:.0f} -> "
+            f"{peak_strict:.0f} strict ({delta_pct:+.1f}%)")
+    else:
+        QA["control_pool_sensitivity"] = {
+            "ok": True, "detail": "strict pool too thin at the peak hour to compare"}
+        log("control-pool sensitivity: strict pool too thin at the peak hour")
+
+
 def build_dollars(con):
     """Step 4 [STUB]: dollars_per_visit + game_impact_dollars.
 
@@ -261,22 +488,257 @@ def build_dollars(con):
     QA["dollars_built"] = {"ok": True, "detail": "stub: not yet implemented"}
 
 
+def build_gnn_tables(con, silver, bronze_advan):
+    """GNN data contract (design doc section 8b): nodes, edges, time spine,
+    sparse targets, coverage mask, and game labels for the two-part model
+    (counterfactual forecaster + generalization head).
+
+    The ONE place gold reads bronze: catchment edges need VISITOR_HOME_CBGS
+    vectors, which no silver table carries. Everything else comes from silver.
+    """
+    s = silver.rstrip("/")
+
+    # --- nodes: POIs inside 2.5 km (rings 1..GNN_MAX_RING) ------------------
+    con.sql(f"""
+        CREATE OR REPLACE TABLE gnn_nodes AS
+        SELECT p.FOOTPRINT_ID AS footprint_id, p.ring_id, p.ring,
+               p.dist_m, p.lat, p.lon, p.naics_code, p.top_category,
+               p.location_name = '{VENUE_POI_NAME}' AS is_venue,
+               COALESCE(b.n_covered, 0) AS weeks_covered,
+               b.n_weeks IS NOT NULL AND b.n_covered = b.n_weeks
+                   AS hourly_complete
+        FROM '{s}/poi_rings.parquet' p
+        LEFT JOIN (
+            SELECT footprint_id, COUNT(*) AS n_weeks,
+                   COUNT(*) FILTER (has_hourly) AS n_covered
+            FROM '{s}/occupancy_poi_week_coverage.parquet'
+            GROUP BY 1) b ON b.footprint_id = p.FOOTPRINT_ID
+        WHERE p.ring_id IS NOT NULL AND p.ring_id <= {GNN_MAX_RING}
+    """)
+    n_nodes = con.sql("SELECT COUNT(*) FROM gnn_nodes").fetchone()[0]
+    ring_ref = con.sql(f"""
+        SELECT COUNT(*) FROM '{s}/poi_rings.parquet'
+        WHERE ring_id IS NOT NULL AND ring_id <= {GNN_MAX_RING}""").fetchone()[0]
+    gate("gnn_nodes_match_rings", n_nodes == ring_ref,
+         f"{n_nodes} nodes vs {ring_ref} POIs in rings 1-{GNN_MAX_RING}")
+
+    # --- spatial edges: symmetric k-NN by haversine -------------------------
+    con.sql(f"""
+        CREATE OR REPLACE TABLE gnn_edges_spatial AS
+        WITH pairs AS (
+            SELECT a.footprint_id AS src, b.footprint_id AS dst,
+                   2 * 6371008.8 * asin(sqrt(
+                       pow(sin(radians(b.lat - a.lat) / 2), 2)
+                       + cos(radians(a.lat)) * cos(radians(b.lat))
+                         * pow(sin(radians(b.lon - a.lon) / 2), 2)))
+                       AS edge_dist_m
+            FROM gnn_nodes a JOIN gnn_nodes b
+              ON a.footprint_id != b.footprint_id),
+        knn AS (
+            SELECT src, dst, edge_dist_m,
+                   row_number() OVER (PARTITION BY src
+                                      ORDER BY edge_dist_m, dst) AS rk
+            FROM pairs)
+        SELECT LEAST(src, dst) AS a, GREATEST(src, dst) AS b,
+               MIN(edge_dist_m) AS edge_dist_m
+        FROM knn WHERE rk <= {K_SPATIAL}
+        GROUP BY 1, 2
+    """)
+    # store undirected once (a < b); loaders emit both directions
+    n_sp, selfloops = con.sql("""
+        SELECT COUNT(*), COUNT(*) FILTER (a = b) FROM gnn_edges_spatial
+    """).fetchone()
+    deg_min, deg_max = con.sql("""
+        WITH deg AS (
+            SELECT n.footprint_id, COUNT(e.a) AS d
+            FROM gnn_nodes n
+            LEFT JOIN (SELECT a FROM gnn_edges_spatial
+                       UNION ALL SELECT b FROM gnn_edges_spatial) e(a)
+              ON e.a = n.footprint_id
+            GROUP BY 1)
+        SELECT MIN(d), MAX(d) FROM deg""").fetchone()
+    gate("gnn_edges_valid",
+         selfloops == 0 and deg_min >= K_SPATIAL,
+         f"{n_sp} undirected spatial edges, {selfloops} self-loops, "
+         f"degree range [{deg_min}, {deg_max}] (floor {K_SPATIAL})")
+
+    # --- catchment edges: cosine of VISITOR_HOME_CBGS vectors ---------------
+    # Advan's trade-area guidance: treat these columns as ratios. Cosine is a
+    # ratio-style use. Vectors aggregate the whole occupancy window; nodes
+    # without vectors (privacy-floored or unreported) get no catchment edges
+    # and stay connected via spatial k-NN.
+    con.sql(f"""
+        CREATE OR REPLACE TABLE cbg_vec AS
+        SELECT n.footprint_id, k.cbg,
+               SUM(TRY_CAST(json_extract_string(
+                   a.VISITOR_HOME_CBGS, '$."' || k.cbg || '"') AS DOUBLE)) AS w
+        FROM read_parquet('{bronze_advan}') a
+        JOIN gnn_nodes n ON n.footprint_id = a.FOOTPRINT_ID,
+             UNNEST(json_keys(a.VISITOR_HOME_CBGS)) AS k(cbg)
+        WHERE a.VISITOR_HOME_CBGS IS NOT NULL
+          AND a.DATE_RANGE_START::DATE >= DATE '{SPLITS["train"][0]}'
+          AND a.DATE_RANGE_START::DATE <= DATE '{SPLITS["test"][1]}'
+        GROUP BY 1, 2
+    """)
+    con.sql(f"""
+        CREATE OR REPLACE TABLE gnn_edges_catchment AS
+        WITH norms AS (
+            SELECT footprint_id, sqrt(SUM(w * w)) AS nrm
+            FROM cbg_vec GROUP BY 1),
+        dots AS (
+            SELECT x.footprint_id AS src, y.footprint_id AS dst,
+                   SUM(x.w * y.w) AS dot
+            FROM cbg_vec x JOIN cbg_vec y
+              ON x.cbg = y.cbg AND x.footprint_id < y.footprint_id
+            GROUP BY 1, 2),
+        cos AS (
+            SELECT d.src, d.dst, d.dot / (na.nrm * nb.nrm) AS cos_sim
+            FROM dots d
+            JOIN norms na ON na.footprint_id = d.src
+            JOIN norms nb ON nb.footprint_id = d.dst
+            WHERE d.dot / (na.nrm * nb.nrm) >= {MIN_COS}),
+        ranked AS (
+            SELECT src, dst, cos_sim, row_number() OVER (
+                       PARTITION BY src ORDER BY cos_sim DESC, dst) AS rk_s,
+                   row_number() OVER (
+                       PARTITION BY dst ORDER BY cos_sim DESC, src) AS rk_d
+            FROM cos)
+        SELECT src AS a, dst AS b, cos_sim
+        FROM ranked WHERE rk_s <= {K_CATCH} OR rk_d <= {K_CATCH}
+    """)
+    n_cat, cat_nodes = con.sql("""
+        SELECT COUNT(*),
+               (SELECT COUNT(DISTINCT f) FROM (
+                   SELECT a AS f FROM gnn_edges_catchment
+                   UNION SELECT b FROM gnn_edges_catchment))
+        FROM gnn_edges_catchment""").fetchone()
+    share = cat_nodes / n_nodes
+    gate("gnn_catchment_coverage", share >= 0.5,
+         f"{n_cat} catchment edges touch {cat_nodes}/{n_nodes} nodes "
+         f"({share:.0%}), want >= 50%")
+
+    # --- hourly time spine with covariates and splits ------------------------
+    # Covariate additions (2026-07-28): full daily weather (tmin/tavg/awnd),
+    # the holiday flag, HOURLY weather (silver weather_hour: SFO LCD, F/in/mph),
+    # and HOURLY Chase windows (silver event_hour: real tip-offs from the ESPN
+    # re-pull that also fixed the UTC +1-day date bug; concerts use the
+    # documented 19-23 default). Day flags stay for day-grain consumers.
+    split_case = " ".join(
+        f"WHEN date BETWEEN DATE '{a}' AND DATE '{b}' THEN '{k}'"
+        for k, (a, b) in SPLITS.items())
+    con.sql(f"""
+        CREATE OR REPLACE TABLE gnn_time_hour AS
+        SELECT d.date, h.hour::SMALLINT AS hour,
+               d.date + INTERVAL (h.hour) HOUR AS ts,
+               d.giants_home, d.n_games, d.first_pitch_hour, d.day_night,
+               d.clean_control, d.dow, month(d.date) AS month,
+               CASE WHEN d.giants_home AND d.n_games = 1
+                         AND d.first_pitch_hour IS NOT NULL
+                    THEN CAST(date_diff('hour',
+                         d.date + INTERVAL (d.first_pitch_hour) HOUR,
+                         d.date + INTERVAL (h.hour) HOUR) AS INT)
+               END AS relative_hour,
+               p.ballpark_event IS NOT NULL AS ballpark_day,
+               p.chase_event IS NOT NULL AS chase_day,
+               p.moscone_event IS NOT NULL AS moscone_day,
+               p.citywide_event IS NOT NULL AS citywide_day,
+               p.street_fair IS NOT NULL AS street_fair_day,
+               p.us_federal_holiday,
+               p.tmax, p.tmin, p.tavg, p.prcp, p.awnd,
+               w.temp_hr, w.prcp_hr, w.wind_hr,
+               COALESCE(e.chase_event_hour, FALSE) AS chase_event_hour,
+               CASE {split_case} END AS split
+        FROM panel_dates d
+        JOIN (SELECT DISTINCT date, ballpark_event, chase_event,
+                     moscone_event, citywide_event, street_fair,
+                     us_federal_holiday, tmax, tmin, tavg, prcp, awnd
+              FROM panel) p USING (date)
+        CROSS JOIN (SELECT UNNEST(generate_series(0, 23)) AS hour) h
+        LEFT JOIN '{s}/weather_hour.parquet' w
+               ON w.date = d.date AND w.hour = h.hour
+        LEFT JOIN '{s}/event_hour.parquet' e
+               ON e.date = d.date AND e.hour = h.hour
+        WHERE d.date BETWEEN DATE '{SPLITS["train"][0]}'
+                         AND DATE '{SPLITS["test"][1]}'
+    """)
+    bad_split, n_hours = con.sql("""
+        SELECT COUNT(*) FILTER (split IS NULL), COUNT(*)
+        FROM gnn_time_hour""").fetchone()
+    gate("gnn_splits_partition", bad_split == 0,
+         f"{n_hours} spine hours, {bad_split} outside any split")
+    leak = con.sql("""
+        SELECT COUNT(*) FROM gnn_time_hour
+        WHERE clean_control AND giants_home""").fetchone()[0]
+    gate("gnn_no_leakage", leak == 0,
+         f"{leak} hours flagged clean_control on a game day")
+    wx_cov = con.sql("""
+        SELECT AVG((temp_hr IS NOT NULL)::INT) FROM gnn_time_hour
+    """).fetchone()[0]
+    gate("gnn_weather_coverage", wx_cov is not None and wx_cov >= 0.95,
+         f"{wx_cov:.1%} of spine hours carry hourly temp")
+    ch = con.sql("""
+        SELECT COUNT(*) FROM gnn_time_hour
+        WHERE chase_event_hour AND NOT chase_day""").fetchone()[0]
+    gate("gnn_event_hour_within_day", ch == 0,
+         f"{ch} chase_event_hour rows outside a chase_day")
+
+    # --- sparse targets + coverage mask, node set only -----------------------
+    con.sql(f"""
+        CREATE OR REPLACE TABLE gnn_target_node_hour AS
+        SELECT o.footprint_id, o.date, o.hour, o.visitor_hours
+        FROM '{s}/occupancy_poi_hour.parquet' o
+        JOIN gnn_nodes n USING (footprint_id)
+    """)
+    n_tgt = con.sql("SELECT COUNT(*) FROM gnn_target_node_hour").fetchone()[0]
+    ref = con.sql(f"""
+        SELECT COUNT(*) FROM '{s}/occupancy_poi_hour.parquet' o
+        JOIN '{s}/poi_rings.parquet' p ON p.FOOTPRINT_ID = o.footprint_id
+        WHERE p.ring_id <= {GNN_MAX_RING}""").fetchone()[0]
+    gate("gnn_target_matches_silver", n_tgt == ref,
+         f"{n_tgt:,} target rows vs {ref:,} silver POI-hours in rings "
+         f"1-{GNN_MAX_RING}")
+
+    con.sql(f"""
+        CREATE OR REPLACE TABLE gnn_node_week_coverage AS
+        SELECT c.footprint_id, c.week_start, c.has_hourly
+        FROM '{s}/occupancy_poi_week_coverage.parquet' c
+        JOIN gnn_nodes n USING (footprint_id)
+    """)
+
+    # --- generalization-head labels: v0 lifts on occupancy-window games ------
+    con.sql(f"""
+        CREATE OR REPLACE TABLE gnn_game_labels AS
+        SELECT date, ring_id, ring, measure, observed, baseline, lift,
+               lift_pct, attendance, day_night, first_pitch_hour, dow
+        FROM game_effects
+        WHERE date >= DATE '{SPLITS["train"][0]}'
+    """)
+    n_lab = con.sql("SELECT COUNT(*) FROM gnn_game_labels").fetchone()[0]
+    log(f"gnn tables: {n_nodes} nodes, {n_sp} spatial + {n_cat} catchment "
+        f"edges, {n_hours} spine hours, {n_tgt:,} targets, {n_lab} labels")
+
+
 def build_impact_model(con):
     """Step 5 [STUB]: the generalizable impact function.
 
-    Planned: train on game_effects (covariates: attendance, day_night,
-    first_pitch_hour, dow, month, opponent, chase_day/moscone_day; target:
-    per-ring lift). Validate across seasons and opponents (single-venue
-    scope). Register in the SageMaker Model Registry with a model card;
-    approval there is the promotion gate that triggers endpoint deploy
-    (reuse of the 540 MLOps stack). Gold stores the training table and eval
-    metrics; the model artifact lives in the SageMaker default bucket and is
-    referenced from build_manifest.json.
-    Note for the modeling: at ring 1, lift is nearly flat in attendance
+    Team decision 2026-07-28: the model is a GNN, in two parts. (1) A
+    counterfactual forecaster trained on clean non-game node-hours to predict
+    visitor_hours per POI-hour (lift = observed - prediction on game hours);
+    this is the "regression baseline v1" and must beat the matched-control v0.
+    (2) A generalization head mapping game covariates to per-ring lift for the
+    "project any future event" deliverable, labels from gnn_game_labels.
+    The full data contract (nodes, spatial + catchment edges, hourly spine
+    with splits, sparse targets, coverage mask) is built by build_gnn_tables();
+    see docs/design/2026-07-28-advan-occupancy.md section 8b. Training runs
+    downstream (SageMaker; quota wall cleared 2026-07-28), registered in the
+    Model Registry per the existing promotion gate.
+    Note for the modeling: at ring 1, daily lift is nearly flat in attendance
     (corr ~0.13); check whether attendance matters more at outer rings
     before committing to it as the headline input."""
-    log("impact_model: STUB, skipped (see docstring)")
-    QA["impact_model_built"] = {"ok": True, "detail": "stub: not yet implemented"}
+    log("impact_model: STUB, skipped (GNN contract in gnn_* tables; "
+        "training is downstream)")
+    QA["impact_model_built"] = {"ok": True, "detail": "stub: GNN data contract "
+                                "built by build_gnn_tables; training downstream"}
 
 
 def crosscheck_luke(con, residuals):
@@ -299,7 +761,10 @@ def crosscheck_luke(con, residuals):
         log(f"cross-check vs Luke skipped: {e}")
 
 
-TABLES = ["game_effects", "event_study_ring", "distance_decay"]
+TABLES = ["game_effects", "event_study_ring", "distance_decay",
+          "occupancy_event_study", "gnn_nodes", "gnn_edges_spatial",
+          "gnn_edges_catchment", "gnn_time_hour", "gnn_target_node_hour",
+          "gnn_node_week_coverage", "gnn_game_labels"]
 
 
 def write_outputs(con, out, silver, started):
@@ -314,7 +779,11 @@ def write_outputs(con, out, silver, started):
         "silver": silver,
         "params": {"measures": MEASURES, "match_k": MATCH_K,
                    "match_max_window_days": MATCH_MAX_WINDOW_DAYS,
-                   "min_controls": MIN_CONTROLS, "ring_mid_m": RING_MID_M},
+                   "min_controls": MIN_CONTROLS, "ring_mid_m": RING_MID_M,
+                   "occ_measures": OCC_MEASURES,
+                   "rel_hour_range": [REL_HOUR_MIN, REL_HOUR_MAX],
+                   "gnn_max_ring": GNN_MAX_RING, "k_spatial": K_SPATIAL,
+                   "k_catch": K_CATCH, "min_cos": MIN_COS, "splits": SPLITS},
         "tables": counts,
         "stubs": ["dollars_per_visit", "game_impact_dollars", "impact_model"],
         "qa": QA,
@@ -338,12 +807,23 @@ promotion; agent-loop experiment variants go to `experiments/<run-id>/`.
 
 Baseline estimator v0: matched clean-control mean (nearest
 {m['params']['match_k']} same day-of-week clean days, max
-+/- {m['params']['match_max_window_days']} days). Regression baseline is the
-planned v1.
++/- {m['params']['match_max_window_days']} days). The GNN counterfactual
+forecaster is the planned v1 (see the gnn_* data contract below).
 
 | Table | Rows |
 |---|---|
 {rows}
+
+`occupancy_event_study` and every `gnn_*` table use the OCCUPANCY window
+(2023+, silver's OCC_START/OCC_END; Advan changed the hourly construction at
+2023 Q1, so 2022 visitor-hours are excluded). `game_effects`,
+`event_study_ring`, and `distance_decay` keep the full 2022+ daily window.
+visitor_hours is presence per hourly bucket, NOT a headcount; never mix it
+with visits. GNN contract: nodes = rings 1-{m['params']['gnn_max_ring']}
+POIs; edges = spatial {m['params']['k_spatial']}-NN + VISITOR_HOME_CBGS
+cosine (>= {m['params']['min_cos']}, top {m['params']['k_catch']}); temporal
+splits {m['params']['splits']}; sparse targets disambiguated by
+gnn_node_week_coverage (missing + covered week = true zero, else unknown).
 
 Stubs (documented in the script, not yet built): {', '.join(m['stubs'])}.
 
@@ -364,11 +844,15 @@ def main():
     ap.add_argument("--out", default="./gold")
     ap.add_argument("--residuals",
                     default="s3://aai-590-group2-capstone/eia-nowcast/gold/game_residuals_0_300m.parquet")
+    # The ONE bronze input gold takes: VISITOR_HOME_CBGS vectors for the GNN
+    # catchment edges live only in raw Advan (no silver table carries them).
+    ap.add_argument("--bronze-advan",
+                    default="s3://aai-590-group2-capstone/bronze/advan_weekly_patterns/*.parquet")
     args = ap.parse_args()
 
     started = datetime.datetime.now()
     con = duckdb.connect()
-    if "s3://" in args.silver + args.residuals:
+    if "s3://" in args.silver + args.residuals + args.bronze_advan:
         con.sql("CREATE OR REPLACE SECRET aws (TYPE s3, PROVIDER credential_chain, "
                 "REGION 'us-east-2')")
 
@@ -377,6 +861,8 @@ def main():
     build_game_effects(con)
     build_event_study(con)
     build_distance_decay(con)
+    build_occupancy_event_study(con, args.silver)
+    build_gnn_tables(con, args.silver, args.bronze_advan)
     build_dollars(con)
     build_impact_model(con)
     crosscheck_luke(con, args.residuals)
