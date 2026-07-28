@@ -90,7 +90,37 @@ Food services (NAICS 722) in the core ring is the weak spot: 8 of 16 POIs and
 49, 62, 74, 86, 98, 110, 123, which is Advan's scale-up from raw panel devices
 at roughly 12.3 estimated visits per observed device. Hourly is on the same
 scale (most common non-zero value is 13). A single POI-hour is therefore either
-0 or at least about 12.
+0 or at least about 12. The scale drifts gently with panel growth (yearly
+median min-nonzero daily value: 18, 14, 12, 12 for 2022-2025; max week-over-week
+step 5), which is smooth drift, not a break.
+
+### 2.1 Vendor construction break at 2023 Q1 (found during implementation)
+
+The hourly array itself has a discontinuity the daily array does not. On a
+fixed set of 4,284 POIs reporting hourly in all four years (composition held
+constant), quarterly `sum(hourly) / sum(daily)`:
+
+| Quarter | Ratio |
+|---|---|
+| 2022 Q1-Q4 | 1.647, 1.638, 1.648, 1.638 |
+| 2023 Q1 | 2.772 |
+| 2023 Q2-Q4 | 2.652, 2.504, 2.495 |
+| 2024 | 2.504, 2.534, 2.330, 2.304 |
+| 2025 | 2.187, 2.130, 2.065, 2.066 |
+
+A +69% step at the 2022/2023 boundary on constant composition means Advan
+changed how `VISITS_BY_EACH_HOUR` is constructed. Corroborating: the minimum
+non-zero hourly value is 18 in 2022 and 1 from 2023 on, so the value grid
+changed too. Within 2023-2025 the ratio drifts smoothly (max quarter-over-
+quarter change about 6%).
+
+**Decision (Steve, 2026-07-28): the occupancy window is 2023-01-02 to
+2025-12-31.** 2022 visitor-hours are not comparable to 2023+ and are excluded.
+The window starts at the first Monday-aligned Advan week of the new era
+because the week of 2022-12-26 straddles the break and would leak one
+old-construction day (2023-01-01, an offseason Sunday) into the panel. The
+daily visits panel is unaffected and keeps its full 2022-2025 window; every
+existing estimate stands. Three seasons, roughly 240 home games, remain.
 
 ## 3. Non-goals
 
@@ -126,12 +156,14 @@ The code ignores the label deliberately, with a comment saying why, and gate
 
 Built by a new `build_occupancy()` in `pipeline/build_silver.py`, mirroring
 `build_visits_ring_day()`. Reads bronze Advan and the existing `poi_rings`
-table. Window is the existing `PANEL_START` to `PANEL_END`, 2022-01-01 to
-2025-12-31, so 1,461 days.
+table. Window is `OCC_START` to `OCC_END`, **2023-01-02 to 2025-12-31**
+(1,095 days: 364 + 366 + 365), narrower than the daily panel per section 2.1.
+Only weeks fully inside the window are read; a straddling week carries the
+pre-break construction.
 
 ### 6.1 `occupancy_ring_hour.parquet`
 
-The analysis deliverable. Exactly 175,320 rows (1,461 days x 24 hours x 5 rings).
+The analysis deliverable. Exactly 131,400 rows (1,095 days x 24 hours x 5 rings).
 
 | Column | Meaning |
 |---|---|
@@ -156,8 +188,9 @@ and still contribute 0 in a given hour, which is a true zero rather than a gap.
 
 ### 6.2 `occupancy_poi_hour.parquet`
 
-POI-grain detail, all 5 rings, sparse. Roughly 72M rows. Replaces the
-hand-uploaded `silver/advan_hourly/` with reproducible build output.
+POI-grain detail, all 5 rings, sparse. Measured: 49,612,710 rows on the 2023+
+window. Replaces the hand-uploaded `silver/advan_hourly/` with reproducible
+build output.
 
 | Column | Meaning |
 |---|---|
@@ -167,8 +200,8 @@ hand-uploaded `silver/advan_hourly/` with reproducible build output.
 | `ring_id` | ring assignment |
 | `naics_code` | industry code |
 
-Only non-zero hours are stored. 75.65% of POI-hours are zero, so sparsity cuts
-the table from about 268M rows to about 72M.
+Only non-zero hours are stored. About 75% of POI-hours are zero, so sparsity
+cuts the table roughly fourfold.
 
 ### 6.3 `occupancy_poi_week_coverage.parquet`
 
@@ -189,7 +222,8 @@ false. Without this table, absence cannot be distinguished from non-reporting.
 
 `visitor_hours_balanced` restricts to POIs that both:
 
-1. report non-null `VISITS_BY_EACH_HOUR` in every Advan week in the window, and
+1. report non-null `VISITS_BY_EACH_HOUR` in at least 95% of the window's Advan
+   weeks (ceil(0.95 x 157) = 150 of 157), and
 2. were open for the whole window per `OPEN_DATE` and `CLOSE_DATE`, using the
    spec's sentinels (1970-01-01 means opened before 2010, 2038-01-01 means
    still open).
@@ -197,9 +231,13 @@ false. Without this table, absence cannot be distinguished from non-reporting.
 Condition 2 is an improvement over inferring presence from `weeks_present`
 alone: a POI that closed mid-study should be excluded explicitly.
 
-The size of this set must be measured during implementation. If ring 1 retains
-fewer than 10 POIs, that gets reported and the criterion relaxed to coverage in
-at least 95% of weeks rather than shipping a near-empty column silently.
+Measured outcome (2026-07-28): the strict all-157-weeks criterion kept only 5
+core-ring POIs, so the documented fallback shipped. With both conditions (95%
+coverage + open all window) the set is 3,148 POIs, 6 in ring 1. The ring-1 thinness is structural
+(only about 21 of its 37 POIs report hourly in any week), so
+**`visitor_hours_balanced` is a weak column in the core ring under any
+criterion** and the READMEs say so. Rings 2-4, where the GNN nodes live, get
+the real benefit of the relaxation.
 
 ## 7. Silver QA gates
 
@@ -209,7 +247,7 @@ Using the existing `gate()` helper. Failure aborts the build.
 |---|---|
 | `advan_vbh_parse` | every non-null hourly array has exactly 168 elements |
 | `advan_vbh_local_time` | on single-game days, ring-1 `visitor_hours` peak hour is within +/-3 of `first_pitch_hour` for at least 80% of games |
-| `advan_scale_stability` | per week, the minimum non-zero `VISITS_BY_DAY` value stays inside [10, 16] and the median first-difference of the 20 smallest distinct non-zero values stays inside [10, 16] |
+| `advan_hourly_construction_stable` | on POIs with hourly in every window year, quarterly `sum(hourly)/sum(daily)` changes at most 15% quarter over quarter; plus a hard assert that `OCC_START >= 2023-01-02` so the 2022 break stays excluded |
 | `advan_vbh_dwell_crosscheck` | visitor-hours predicted from `BUCKETED_DWELL_TIMES` correlate with observed at 0.85 or better across POIs, with an aggregate ratio inside [0.7, 1.4] |
 | `venue_hours_per_visit` | venue POI `visitor_hours / visits` inside [2.5, 6.0] on single-game days |
 | `occupancy_panel_shape` | exactly 1,461 x 24 x 5 rows, zero duplicates |
@@ -219,9 +257,12 @@ Using the existing `gate()` helper. Failure aborts the build.
 `advan_vbh_local_time` is the highest-value gate. It is what caught the
 semantics, and it fails loudly if anyone reintroduces a timezone conversion.
 
-`advan_scale_stability` exists because Advan's roughly 12.3x scale-up is applied
-by the vendor. If it drifts across 2022-2025, ring totals move for reasons
-unrelated to games and every cross-season comparison silently breaks.
+`advan_hourly_construction_stable` exists because the vendor has already
+changed the hourly construction once (section 2.1, +69% at 2023 Q1). The gate
+holds the window on the far side of that break and fails the build if a future
+re-break lands inside it, instead of letting every cross-season comparison
+silently shift. The fixed-POI set makes composition change unable to fake
+stability.
 
 `advan_vbh_dwell_crosscheck` derives an independent prediction of visitor-hours
 from the dwell distribution. For a visit of duration `d` minutes starting at a
@@ -231,10 +272,11 @@ multipliers of about 1.04, 1.21, 1.67, 3.50, 6.00. Predicted visitor-hours is
 the dwell-weighted sum. Agreement with the observed hourly sum is strong
 independent evidence for the bucket-spanning interpretation.
 
-## 8. Gold table
+## 8. Gold: hourly event study
 
 Built by a new `build_occupancy_event_study()` in `pipeline/build_gold.py`.
-Reads only silver.
+Reads only silver. Covers the occupancy window (2023+), so it pools three
+seasons of a single vendor construction.
 
 ### `occupancy_event_study.parquet`
 
@@ -276,16 +318,60 @@ The excluded game count is recorded in the build manifest.
 | `occupancy_es_peak_at_zero` | for ring 1, the largest positive effect falls at `relative_hour` between -1 and +2 |
 | `occupancy_es_outer_null` | ring 5 pooled effect is not significantly positive, preserving its role as a placebo ring |
 
+## 8b. Gold: GNN data contract
+
+The impact model is a GNN (team decision, 2026-07-28), framed as two parts:
+
+1. **Counterfactual forecaster.** Train on clean non-game node-hours to
+   predict `visitor_hours` per POI-hour from graph structure + calendar +
+   weather. Lift = observed minus prediction on game hours. This is exactly
+   the "regression baseline v1" the gold scaffold already anticipates, so the
+   matched-control v0 stays as the benchmark it must beat. Effective sample is
+   millions of node-hours, not ~240 games.
+2. **Generalization head.** Maps game covariates (attendance, first pitch,
+   day/night, dow, month) to predicted per-ring lift, for the "project any
+   future event" deliverable. Labels come from the v0 estimator.
+
+Node scope: rings 1-4 (inside 2.5 km), 5,842 POIs, hourly. Model training
+itself is downstream of gold (SageMaker, registered per the existing promotion
+gate); gold's job is the reproducible data contract, built by
+`build_gnn_tables()` in `pipeline/build_gold.py`:
+
+| Table | Grain | Content |
+|---|---|---|
+| `gnn_nodes.parquet` | 5,842 POIs | footprint_id, ring, dist_m, lat/lon, NAICS, top_category, balanced + venue flags, weeks covered |
+| `gnn_edges_spatial.parquet` | ~5,842 x 8 x 2 | k-nearest by haversine (K_SPATIAL = 8), symmetric, no self-loops, dist_m weight |
+| `gnn_edges_catchment.parquet` | top-k per node | cosine similarity of window-aggregated `VISITOR_HOME_CBGS` vectors (K_CATCH = 8, MIN_COS = 0.1), symmetric |
+| `gnn_time_hour.parquet` | 26,280 hours | hour spine x calendar: game flags and covariates, clean_control, confounder flags, weather, relative_hour (NULL off game days), split |
+| `gnn_target_node_hour.parquet` | sparse | footprint_id, date, hour, visitor_hours (from silver, rings 1-4) |
+| `gnn_node_week_coverage.parquet` | node x week | has_hourly mask; missing target + covered week = true zero, uncovered = unknown |
+| `gnn_game_labels.parquet` | game x ring x measure | v0 lifts from `game_effects` (2023+ games) for the generalization head |
+
+Splits are temporal and parameterized: train 2023-2024, validation 2025 H1,
+test 2025 H2, stamped on `gnn_time_hour.split`. The catchment edges are the
+one place gold reads bronze (the CBG vectors are not in any silver table);
+`build_gold.py` takes `--bronze-advan` and says so in its docstring.
+
+`VISITOR_HOME_CBGS` caveats carried into the README: 66% fill, privacy-floored
+(groups under 2 devices dropped, 2-4 reported as 4), and Advan's own guidance
+is to treat the trade-area columns as ratios. Cosine similarity is exactly the
+ratio-style use, and nodes without vectors simply get no catchment edges
+(spatial edges still connect them).
+
+Gold gates for the contract: node count matches rings 1-4 in `poi_rings`;
+edges symmetric with no self-loops; at least half the nodes carry a catchment
+edge; target row count equals the filtered silver count; splits partition the
+window with no overlap; every clean-control training hour is truly non-game.
+
 ## 9. Risks
 
-**Build time.** The POI-hour table is about 72M rows against a current
-one-minute silver build. Mitigation: measure on a single week and extrapolate
-before running the full window, and partition the POI-hour output by year if it
-does not stream cleanly through DuckDB.
+**Build time.** Measured 2026-07-28: `build_occupancy()` takes about 8 minutes
+(49.6M sparse rows), on top of the roughly 1-minute daily build. Under the
+15-minute bar set for partitioning, so the output stays unpartitioned.
 
-**Thin balanced set.** Requiring hourly coverage in all roughly 209 weeks may
-leave very few of ring 1's 37 POIs. Measured during implementation, with the
-documented fallback in 6.4.
+**Thin balanced set.** Confirmed and structural in the core ring: 5 POIs
+strict, 6 relaxed (section 6.4). The shipped criterion is the documented 95%
+fallback; ring-1 `visitor_hours_balanced` is flagged weak in every README.
 
 **Food coverage in the core ring.** `visitor_hours_food` for ring 1 rests on 8
 of 16 POIs and 67.2% of food visits. It is the weakest number in this design
