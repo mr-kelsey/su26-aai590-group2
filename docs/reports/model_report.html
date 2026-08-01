@@ -1,0 +1,608 @@
+<title>Citywide Spatiotemporal Nowcast — Model Report</title>
+
+<style>
+  :root{
+    --ground:#F4F6F7; --raised:#FFFFFF; --sunk:#E9EDEF;
+    --ink:#131C24; --ink-2:#41525F; --ink-3:#6C7D8A;
+    --rule:#D2DADE;
+    --pos:#C2551F; --neg:#0E86B8; --mid:#9AA7AF;
+    --accent:#C2551F;
+    --serif:ui-serif,"Iowan Old Style",Charter,"Palatino Linotype",Georgia,serif;
+    --sans:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,monospace;
+    --measure:68ch;
+  }
+  @media (prefers-color-scheme:dark){
+    :root{
+      --ground:#131C24; --raised:#1B262F; --sunk:#0E161C;
+      --ink:#E8EDF0; --ink-2:#A9B8C2; --ink-3:#7C8D99;
+      --rule:#2C3A45;
+      --pos:#DB6B33; --neg:#31A0D4; --mid:#6E7D87;
+      --accent:#DB6B33;
+    }
+  }
+  :root[data-theme="dark"]{
+    --ground:#131C24; --raised:#1B262F; --sunk:#0E161C;
+    --ink:#E8EDF0; --ink-2:#A9B8C2; --ink-3:#7C8D99;
+    --rule:#2C3A45; --pos:#DB6B33; --neg:#31A0D4; --mid:#6E7D87; --accent:#DB6B33;
+  }
+  :root[data-theme="light"]{
+    --ground:#F4F6F7; --raised:#FFFFFF; --sunk:#E9EDEF;
+    --ink:#131C24; --ink-2:#41525F; --ink-3:#6C7D8A;
+    --rule:#D2DADE; --pos:#C2551F; --neg:#0E86B8; --mid:#9AA7AF; --accent:#C2551F;
+  }
+
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--ground);color:var(--ink);
+       font-family:var(--sans);font-size:16px;line-height:1.6;
+       -webkit-font-smoothing:antialiased}
+  .wrap{max-width:1180px;margin:0 auto;padding:0 clamp(16px,4vw,40px)}
+  .col{max-width:var(--measure)}
+  h1,h2,h3{font-family:var(--serif);font-weight:600;text-wrap:balance;margin:0}
+  h1{font-size:clamp(2rem,4.4vw,3.1rem);line-height:1.08;letter-spacing:-0.015em}
+  h2{font-size:clamp(1.4rem,2.4vw,1.85rem);line-height:1.2;letter-spacing:-0.01em}
+  h3{font-size:1.08rem;line-height:1.3}
+  p{margin:0}
+  a{color:var(--accent)}
+  .eyebrow{font-family:var(--mono);font-size:.7rem;letter-spacing:.14em;
+           text-transform:uppercase;color:var(--ink-3)}
+  .lede{font-size:1.12rem;color:var(--ink-2);max-width:60ch}
+  .stack{display:flex;flex-direction:column}
+  .g8{gap:8px}.g12{gap:12px}.g16{gap:16px}.g24{gap:24px}.g32{gap:32px}.g48{gap:48px}
+
+  header.masthead{border-bottom:1px solid var(--rule);padding:clamp(40px,7vw,76px) 0 32px}
+  .meta{display:flex;flex-wrap:wrap;gap:6px 22px;font-family:var(--mono);
+        font-size:.74rem;color:var(--ink-3)}
+  .meta b{color:var(--ink-2);font-weight:500}
+
+  section{padding:clamp(40px,6vw,68px) 0;border-bottom:1px solid var(--rule)}
+  section:last-of-type{border-bottom:0}
+
+  .tiles{display:grid;gap:2px;background:var(--rule);border:1px solid var(--rule);
+         grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}
+  .tile{background:var(--raised);padding:16px 18px;display:flex;
+        flex-direction:column;gap:3px}
+  .tile .n{font-family:var(--mono);font-size:1.5rem;font-variant-numeric:tabular-nums;
+           letter-spacing:-0.02em}
+  .tile .k{font-size:.76rem;color:var(--ink-3);line-height:1.3}
+
+  figure{margin:0;display:flex;flex-direction:column;gap:10px}
+  figcaption{font-size:.82rem;color:var(--ink-3);max-width:72ch}
+  .chartbox{background:var(--raised);border:1px solid var(--rule);padding:14px}
+  .scroll{overflow-x:auto}
+  svg{display:block;width:100%;height:auto}
+
+  table{border-collapse:collapse;width:100%;font-size:.87rem}
+  th,td{text-align:right;padding:7px 12px;border-bottom:1px solid var(--rule);
+        font-variant-numeric:tabular-nums;font-family:var(--mono)}
+  th:first-child,td:first-child{text-align:left;font-family:var(--sans)}
+  thead th{font-family:var(--sans);font-size:.74rem;text-transform:uppercase;
+           letter-spacing:.07em;color:var(--ink-3);font-weight:600;
+           border-bottom:1px solid var(--ink-3)}
+  tr.hl td{background:color-mix(in srgb,var(--accent) 9%,transparent);font-weight:600}
+  td.pos{color:var(--pos)} td.neg{color:var(--neg)} td.null{color:var(--ink-3)}
+
+  .legend{display:flex;flex-wrap:wrap;gap:8px 18px;align-items:center;
+          font-size:.78rem;color:var(--ink-2)}
+  .sw{display:inline-block;width:11px;height:11px;border-radius:2px;
+      margin-right:6px;vertical-align:-1px}
+
+  .note{border-left:2px solid var(--accent);padding:2px 0 2px 16px;
+        color:var(--ink-2);font-size:.94rem}
+  .grid2{display:grid;gap:clamp(20px,3vw,36px);grid-template-columns:1fr}
+  @media(min-width:860px){.grid2{grid-template-columns:1fr 1fr}}
+
+  .tip{position:fixed;pointer-events:none;opacity:0;transition:opacity .12s;
+       background:var(--ink);color:var(--ground);font-family:var(--mono);
+       font-size:.72rem;line-height:1.45;padding:7px 9px;border-radius:4px;
+       z-index:50;max-width:240px}
+  .tip b{color:var(--ground)}
+  rect.cell,circle.pt{cursor:crosshair}
+  :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+  @media(prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+
+<div class="tip" id="tip"></div>
+
+<div class="wrap">
+
+  <header class="masthead stack g16">
+    <div class="eyebrow">Capstone · presence-side modelling</div>
+    <h1>Where San&nbsp;Francisco&rsquo;s evening economy moves on game nights</h1>
+    <p class="lede">Two counterfactual models over a 452-cell citywide grid, a crossover
+      test against a second arena, and a dollar figure reconciled exactly to California
+      tax receipts.</p>
+    <div class="meta">
+      <span><b>Window</b> 2023-01-02 → 2025-12-31</span>
+      <span><b>Panel</b> 11,878,560 cell-hours</span>
+      <span><b>Games</b> 246 Giants · 211 Chase</span>
+      <span><b>Branch</b> feature/citywide-spatiotemporal-nowcast</span>
+    </div>
+  </header>
+
+  <section class="stack g24">
+    <div class="tiles" id="tiles"></div>
+    <p class="note col">Every figure below is measured, not illustrative. Where a result
+      was overturned by a later run, the overturned version is stated rather than
+      quietly dropped.</p>
+  </section>
+
+  <section class="stack g24">
+    <div class="col stack g12">
+      <div class="eyebrow">The substrate</div>
+      <h2>452 blocks, drawn where the city actually trades</h2>
+      <p>San Francisco is cut into 250&thinsp;m cells; a cell enters the model only if it
+        holds at least ten points of interest. That keeps <b>452 cells covering 14,467 POIs
+        — 81.9% of the city&rsquo;s total</b> — and drops the sparse residential fringe rather
+        than modelling noise. The cell size is not a convenience: adjacent cells correlate
+        0.445 on hourly residuals while the correlation length runs 750&thinsp;m–1&thinsp;km,
+        so 250&thinsp;m sits where neighbours are informative but not redundant.</p>
+      <p>The shape of the city emerges from the data alone — no basemap is drawn. Cells
+        exist only where commerce does, which is why the Bay, the Presidio and Golden Gate
+        Park appear as voids.</p>
+    </div>
+    <figure class="stack g12">
+      <div class="chartbox"><div id="map"></div></div>
+      <div class="legend" id="maplegend"></div>
+      <figcaption>Each square is one 250&thinsp;m cell, shaded by its raw game-evening
+        contrast (16:00–23:00, game days versus event-free control days, day-level means).
+        This is the unadjusted contrast, not the model&rsquo;s counterfactual estimate —
+        it shows where the signal lives, while the modelled effect sizes appear further
+        down. Colour saturates beyond ±50%; <b>opacity tracks how many POIs a cell
+        holds</b>, so thin cells — whose contrast is correspondingly noisy — render faint
+        rather than advertising signal they do not have. Rings mark 500&thinsp;m,
+        1&thinsp;km and 2&thinsp;km from home plate.</figcaption>
+    </figure>
+  </section>
+
+  <section class="stack g24">
+    <div class="col stack g12">
+      <div class="eyebrow">Design</div>
+      <h2>What the models actually predict</h2>
+      <p>Both models answer one question: <i>what would activity have been in this cell,
+        this hour, had there been no event?</i> They are trained on control hours only and
+        never see an event, so the residual on a game hour is causally readable rather
+        than partly fitted.</p>
+      <p>Neither is autoregressive. Feeding recent activity would be fatal — during a game
+        the last hours already contain the effect, so the model would predict the inflated
+        level and the residual, which <i>is</i> the measurement, would collapse toward zero.
+        Instead both see calendar, weather, cell composition, and a rolling baseline built
+        from prior control days at three lookback depths.</p>
+      <p>Because no input depends on recent activity, the models have <b>no forecast
+        horizon</b>. Every input is knowable ahead of time; only weather forecast quality
+        bounds how far out they stay useful.</p>
+    </div>
+  </section>
+
+  <section class="stack g32">
+    <div class="col stack g12">
+      <div class="eyebrow">Model 1</div>
+      <h2>Gradient-boosted counterfactual</h2>
+      <p>A pooled LightGBM over all 452 cells, with cell identity as a categorical feature.
+        One row per cell-hour, no spatial structure whatsoever. Trained on 4.2&thinsp;M
+        control hours, validated on held-out control hours where ground truth genuinely
+        exists.</p>
+    </div>
+    <div class="grid2">
+      <figure class="stack g12">
+        <h3>Held-out performance</h3>
+        <div class="scroll"><table>
+          <thead><tr><th>Feature set</th><th>Val MAE</th><th>Test MAE</th><th>Test R²</th><th>Bias</th></tr></thead>
+          <tbody>
+            <tr><td>Calendar + weather only</td><td>1.1122</td><td>1.2282</td><td>0.627</td><td>+0.2539</td></tr>
+            <tr><td>+ single k=8 baseline</td><td>0.9658</td><td>1.0307</td><td>0.7222</td><td>+0.0265</td></tr>
+            <tr class="hl"><td>+ multi-depth baseline</td><td>0.8655</td><td>0.9180</td><td>0.7569</td><td>+0.0425</td></tr>
+          </tbody>
+        </table></div>
+        <figcaption>Log1p target. The final model beats a cell-hour-of-week benchmark by
+          32.0%, with 90% intervals covering 0.799.</figcaption>
+      </figure>
+      <div class="stack g12">
+        <h3>The lookback that mattered</h3>
+        <p>The single largest gain came not from architecture but from the temporal
+          reference. A baseline averaging the 8 most recent same-weekday control days
+          sounds local, but because 47% of candidate days are events and get skipped, it
+          reached back a <b>median 112 calendar days</b> on game days — as far as 203. A
+          September Thursday was partly baselined on Thursdays in May.</p>
+        <p>Root-mean-square error turns out to have an interior optimum near k=3–4, and
+          combining depths beats any single one. Replacing k=8 with three depths cut test
+          error <b>10.9%</b> — roughly five times what the graph contributed.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="stack g32">
+    <div class="col stack g12">
+      <div class="eyebrow">Model 2</div>
+      <h2>Spatiotemporal graph network</h2>
+      <p>A learned embedding per cell, dilated causal convolution along time, and graph
+        convolution across the 452 cells — the architecture family used for freeway sensor
+        networks, at comparable scale. It receives the identical feature set, splits and
+        masking, so any gap between the two models is attributable to the graph rather than
+        to feature engineering.</p>
+      <p>Three edge families were ablated against a no-graph control whose adjacency is all
+        zeros. Graph convolution keeps separate self and neighbour weights, so the network
+        <i>can</i> drive the graph to zero if the edges are noise — which matters, because
+        forcing a useless graph to inject noise would have misread the result.</p>
+    </div>
+    <div class="grid2">
+      <figure class="stack g12">
+        <h3>Edge-family ablation</h3>
+        <div class="scroll"><table>
+          <thead><tr><th>Edges</th><th>Val MAE</th><th>Test MAE</th><th>Test R²</th><th>vs none</th></tr></thead>
+          <tbody>
+            <tr><td>None (temporal only)</td><td>1.0151</td><td>1.0897</td><td>0.7203</td><td class="null">—</td></tr>
+            <tr><td>Grid contiguity</td><td>0.9863</td><td>1.0767</td><td>0.7073</td><td class="neg">+1.6%</td></tr>
+            <tr><td>Distance kernel</td><td>1.0108</td><td>1.0728</td><td>0.7241</td><td class="pos">−1.6%</td></tr>
+            <tr class="hl"><td>Visitor-origin flow</td><td>1.0008</td><td>1.0689</td><td>0.7237</td><td class="pos">−1.9%</td></tr>
+          </tbody>
+        </table></div>
+        <figcaption>Contiguity is from the earlier stride-24 run; the other three are the
+          corrected schedule. Direction is consistent across both runs.</figcaption>
+      </figure>
+      <div class="stack g12">
+        <h3>What the ablation says</h3>
+        <p>The graph carries real signal, and in the direction predicted before fitting:
+          edges weighted by the measured correlation function help, while <b>raw
+          unweighted contiguity actively hurts</b>. Citywide, adjacent cells correlate only
+          0.114 — that is precisely the regime where naive adjacency is noise but weighted
+          edges are not.</p>
+        <p>The network confirms it independently. Neighbour-weight norms settle ~2% below
+          their initialisation, meaning the model neither leans on the graph nor rejects
+          it outright.</p>
+      </div>
+    </div>
+    <figure class="stack g12">
+      <h3>Head to head</h3>
+      <div class="chartbox"><div id="cmp"></div></div>
+      <figcaption>Test MAE on held-out control hours, identical features. Lower is better;
+        the dashed rule is the cell-hour-of-week benchmark both models must beat.</figcaption>
+    </figure>
+    <p class="note col"><b>The gradient-boosted model wins by 16%.</b> At this scale, cell
+      identity plus a well-specified temporal baseline carries most of the signal, and
+      2,913 training windows is thin for a neural model to recover that through a
+      32-dimensional embedding — whereas the boosted trees get 452 cell offsets almost for
+      free. An architecture that cannot beat the simpler benchmark is a result worth
+      reporting, not a failure to bury.</p>
+  </section>
+
+  <section class="stack g32">
+    <div class="col stack g12">
+      <div class="eyebrow">Result</div>
+      <h2>The effect, and how far it reaches</h2>
+      <p>Effects are read as a difference-in-differences on model residuals — game-hour
+        residual minus contemporaneous control-hour residual — which cancels the vendor
+        measurement drift documented below. Inference clusters at the day, because
+        cell-hours within a day are heavily correlated and naive cell-hour intervals
+        overstate significance roughly threefold.</p>
+    </div>
+    <div class="grid2">
+      <figure class="stack g12">
+        <h3>By distance from home plate</h3>
+        <div class="chartbox"><div id="bands"></div></div>
+        <figcaption>246 games versus 581 event-free control days, 2,000-draw day-clustered
+          bootstrap. Bars show 95% intervals.</figcaption>
+      </figure>
+      <figure class="stack g12">
+        <h3>By hour relative to first pitch</h3>
+        <div class="chartbox"><div id="hours"></div></div>
+        <figcaption>Raw contrast within 500&thinsp;m. Magnitudes exceed the modelled
+          estimate because the control reference is a broad evening average — the shape is
+          the point, not the level.</figcaption>
+      </figure>
+    </div>
+    <div class="col stack g12">
+      <p><b>Activity rises three hours before first pitch</b> and stays elevated about four
+        hours after, peaking <i>before</i> the game starts — pre-game dining, then
+        post-game lingering. The event window is roughly eight hours, not three.</p>
+      <p>Beyond 2&thinsp;km the effect is indistinguishable from zero. The rest of the city
+        does not fall while the ballpark district rises, so the near-field lift is <b>net
+        new activity rather than spending relocated</b> from elsewhere in San Francisco.
+        That was the question the citywide geography was adopted to answer.</p>
+    </div>
+  </section>
+
+  <section class="stack g32">
+    <div class="col stack g12">
+      <div class="eyebrow">Generalisation</div>
+      <h2>Does the effect follow the venue, or the neighbourhood?</h2>
+      <p>With one venue this is unanswerable. Any model would happily attribute a Mission
+        Bay quirk to the ballpark, and a held-out <i>time</i> split could never catch it —
+        a model that has simply memorised where Oracle Park is would pass that test
+        comfortably.</p>
+      <p>Chase Center sits <b>1,188&thinsp;m away</b> with 211 event days that do not
+        coincide with a Giants game. The 45 days that do coincide are dropped rather than
+        controlled: assigning a shared day to either venue would beg the question. Their
+        0–500&thinsp;m rings share no cells, so each treatment can be estimated in
+        <i>both</i> venues&rsquo; distance frames.</p>
+    </div>
+    <figure class="stack g12">
+      <h3>The crossover, inner ring</h3>
+      <div class="scroll"><table>
+        <thead><tr><th>Event days</th><th>measured around Oracle Park</th><th>measured around Chase Center</th></tr></thead>
+        <tbody>
+          <tr><td>Giants only (201 days)</td>
+              <td class="pos"><b>+43.8%</b> [+38.6, +49.2]</td>
+              <td class="null">−11.5% [−24.3, +3.8]</td></tr>
+          <tr><td>Chase only (211 days)</td>
+              <td class="null">+1.3% [−3.6, +6.7]</td>
+              <td class="pos"><b>+648.7%</b> [+577, +732]</td></tr>
+        </tbody>
+      </table></div>
+      <figcaption>Difference-in-differences against the same 581 event-free control days,
+        day-clustered bootstrap. Bold entries are significant at p&nbsp;&lt;&nbsp;0.05;
+        the grey off-diagonal entries are not distinguishable from zero.</figcaption>
+    </figure>
+    <div class="col stack g12">
+      <p><b>The diagonal is enormous and the off-diagonal is null.</b> Each venue&rsquo;s own
+        inner ring responds to its own events and ignores the other&rsquo;s, 1.2&thinsp;km
+        away. That is the result the generic-neighbourhood explanation cannot produce.</p>
+      <p>The geometry also checks itself: each venue appears in the <i>other&rsquo;s</i>
+        1–2&thinsp;km band (+9.8% and +5.6%) — exactly where something 1,188&thinsp;m
+        distant has to land.</p>
+      <p>The +648.7% is not a bug, and it is the more interesting number. Chase&rsquo;s
+        inner ring is a single qualifying cell in newer, low-density Mission Bay
+        development whose commerce is almost purely event-driven — near-dead on a normal
+        Tuesday, packed on an event night. Oracle Park&rsquo;s district carries a
+        substantial independent SoMa economy that trades regardless. The gap between
+        +43.8% and +648.7% is a real difference in baseline density, not a measurement
+        artifact — though resting on one cell, Chase&rsquo;s interval deserves more weight
+        than its centre.</p>
+    </div>
+  </section>
+
+  <section class="stack g32">
+    <div class="col stack g12">
+      <div class="eyebrow">Dollars</div>
+      <h2>From presence to taxable spend</h2>
+      <p>California reports food-service sales tax quarterly for San Francisco — and
+        because SF is a consolidated city-county, that grain <i>is</i> the city. Those
+        quarterly totals are distributed across days following the citywide food-visit
+        indicator, reconciling to each observed quarter <b>exactly</b> (maximum relative
+        error 4.8&times;10<sup>−15</sup> over 12 quarters and $14.18&thinsp;B). Daily SF
+        food-service spend averages <b>$12.94&thinsp;M</b>.</p>
+    </div>
+    <div class="grid2">
+      <figure class="stack g12">
+        <h3>Incremental spend per game</h3>
+        <div class="scroll"><table>
+          <thead><tr><th>Band</th><th>Evening $</th><th>Attributable</th><th>95% range</th></tr></thead>
+          <tbody>
+            <tr><td>0–500 m</td><td>63,945</td><td>19,723</td><td>18.2–21.3 k</td></tr>
+            <tr><td>500 m–1 km</td><td>74,473</td><td>9,601</td><td>8.1–11.0 k</td></tr>
+            <tr><td>1–2 km</td><td>826,305</td><td>35,583</td><td>26.4–44.6 k</td></tr>
+            <tr><td>2–4 km</td><td>1,737,271</td><td>20,600</td><td>6.9–34.1 k</td></tr>
+            <tr><td>&gt; 4 km</td><td>1,889,233</td><td class="null">0</td><td class="null">not significant</td></tr>
+            <tr class="hl"><td>Per game</td><td></td><td>85,507</td><td>59.6–110.9 k</td></tr>
+          </tbody>
+        </table></div>
+        <figcaption>$21.0&thinsp;M across a 246-game season; $2.57 per attendee on mean
+          attendance of 33,220.</figcaption>
+      </figure>
+      <div class="stack g12">
+        <h3>Three ways this could have been inflated</h3>
+        <p><b>Evening share applied.</b> Effects are estimated on hours 16–23, so they
+          reach only the 34.5% of daily activity in that window. Applying them to whole
+          days would have roughly tripled the figure.</p>
+        <p><b>Attributable fraction is e/(1+e), not e.</b> Observed activity already
+          contains the effect; using the raw uplift would overstate by (1+e).</p>
+        <p><b>The null band enters as zero</b>, not as its noisy point estimate.</p>
+        <p>Note where the money actually comes from: the 1–2&thinsp;km and 2–4&thinsp;km
+          bands supply two-thirds of the total on effects of just +4.5% and +1.2%, because
+          their dollar base is large. The dramatic 0–500&thinsp;m band holds only 1.32% of
+          the city&rsquo;s food spend and contributes 23%.</p>
+      </div>
+    </div>
+    <p class="note col"><b>$2.57 per attendee will look low</b> beside published impact
+      studies, and that is the point. This excludes retail, lodging, parking, transport,
+      every in-stadium concession, and all indirect and induced activity — and the tax
+      data counts taxable transactions only. It is a floor on a narrow, well-anchored
+      slice, which is the opposite of how event impact studies usually fail.</p>
+  </section>
+
+  <section class="stack g24">
+    <div class="col stack g12">
+      <div class="eyebrow">Caveats</div>
+      <h2>What is validated, and what is not</h2>
+      <p><b>A measurement drift sits under everything.</b> Person-hours per visit slide 27%
+        across the window, monotonically. Each quarter-over-quarter step stays inside a 15%
+        tolerance gate, so a per-quarter check passes every step while the level drifts
+        badly. Raw levels are therefore not comparable across years; only contrasts against
+        contemporaneous controls are.</p>
+      <p><b>An earlier displacement finding was withdrawn.</b> Estimated on the 39 games in
+        the test split alone, activity beyond 4&thinsp;km appeared to fall 6.0%. Re-estimated
+        on all 246 games it is +0.2% (p=0.69) — a small-sample artifact, recorded here
+        rather than dropped.</p>
+      <p><b>The dollar figure is validated only at quarterly grain.</b> The
+        disaggregation reconciles exactly to each observed quarter, but everything
+        <i>within</i> a quarter is principled interpolation carrying
+        quantified-but-unverifiable uncertainty. A daily number is not a measured number.</p>
+      <p><b>Velocity drifts, and that bars two things.</b> Citywide food visits are flat
+        (+2%) across 2023–2026 while tax receipts rise 23% — nearly all price, not volume,
+        with dollars-per-visit up 21%. Quarter-by-quarter reconciliation absorbs this, so
+        the disaggregation holds; but velocity cannot be read as a structural parameter,
+        and nothing here may be extrapolated beyond the anchor window.</p>
+      <p><b>The estimates are robust to model quality.</b> Improving the counterfactual by
+        10.9% moved the headline effect by roughly one percentage point — which is the
+        difference-in-differences design working as intended, and which bounds how much a
+        better model could change the conclusions.</p>
+    </div>
+  </section>
+
+</div>
+
+<script>
+const D = {"cells":[[37.77888,-122.3917,27,15,214,148.2],[37.7807,-122.39121,36,9,288,102.5],[37.77886,-122.39393,37,14,408,38.5],[37.77668,-122.39408,33,12,472,30.7],[37.78065,-122.39421,36,11,489,95.8],[37.78313,-122.39137,22,5,536,26.9],[37.77404,-122.39143,11,3,541,46.9],[37.78322,-122.39382,27,4,650,13.8],[37.7785,-122.39673,33,7,654,22.9],[37.7767,-122.39674,30,2,688,36.2],[37.78075,-122.39707,20,8,725,5.1],[37.77203,-122.39116,21,6,750,34.8],[37.78302,-122.39741,22,7,867,30.6],[37.78545,-122.39419,13,6,876,43.8],[37.77865,-122.39954,10,1,901,4.5],[37.77649,-122.40007,13,0,976,51.9],[37.78108,-122.39996,22,6,977,4.0],[37.78551,-122.397,35,7,1025,23.1],[37.78769,-122.39151,25,4,1030,20.5],[37.78283,-122.39975,24,7,1033,32.4],[37.78787,-122.39438,20,2,1125,8.6],[37.77647,-122.40222,21,5,1161,15.3],[37.768,-122.38873,11,2,1181,22.3],[37.77845,-122.40288,22,2,1195,8.6],[37.78542,-122.40003,41,18,1212,19.1],[37.78769,-122.3969,37,11,1213,3.9],[37.78094,-122.40285,39,5,1221,17.7],[37.79002,-122.3911,34,6,1281,23.0],[37.77403,-122.40279,20,4,1292,-7.1],[37.78303,-122.40288,20,6,1293,11.1],[37.78994,-122.39428,47,13,1336,-0.9],[37.76709,-122.3942,24,5,1352,3.9],[37.77181,-122.40231,14,2,1371,-9.2],[37.78758,-122.40001,132,44,1374,3.2],[37.77845,-122.40524,23,3,1403,17.8],[37.77664,-122.40524,12,0,1420,7.0],[37.78526,-122.40327,36,11,1435,4.0],[37.78985,-122.39732,49,10,1437,6.7],[37.78088,-122.40558,16,3,1455,16.4],[37.77392,-122.40475,12,3,1456,6.2],[37.79198,-122.39221,32,19,1512,-4.9],[37.79188,-122.39378,72,22,1530,18.2],[37.78973,-122.40008,91,22,1561,9.3],[37.7837,-122.40586,94,10,1564,10.0],[37.772,-122.40501,25,3,1565,20.0],[37.78775,-122.40292,116,28,1572,5.6],[37.76957,-122.40306,27,5,1574,-15.1],[37.76491,-122.39447,11,2,1590,-1.6],[37.78527,-122.40581,111,17,1631,10.2],[37.76521,-122.39689,14,4,1633,5.4],[37.76988,-122.40437,15,1,1643,4.1],[37.79198,-122.39727,59,15,1646,7.8],[37.77842,-122.40821,18,5,1664,2.8],[37.76768,-122.40228,48,3,1667,4.8],[37.77651,-122.40824,35,11,1682,4.2],[37.78104,-122.40839,50,14,1701,6.8],[37.79002,-122.40257,190,48,1726,5.5],[37.78351,-122.40797,97,28,1731,3.5],[37.78775,-122.40527,163,12,1736,6.6],[37.76528,-122.39982,14,3,1747,35.2],[37.79213,-122.39975,144,35,1764,8.9],[37.77424,-122.40866,14,2,1771,43.3],[37.76317,-122.39467,10,4,1781,83.6],[37.79429,-122.39405,41,15,1795,14.1],[37.78525,-122.40795,134,44,1800,15.3],[37.77164,-122.40821,27,4,1835,7.0],[37.78977,-122.40519,179,38,1871,5.0],[37.79431,-122.39698,113,26,1875,17.5],[37.77004,-122.40769,25,1,1877,-11.9],[37.7675,-122.40552,13,2,1888,3.7],[37.79205,-122.40238,177,42,1889,4.0],[37.7625,-122.39668,35,17,1906,22.5],[37.77877,-122.41102,27,12,1911,0.9],[37.77611,-122.41096,40,7,1926,18.5],[37.76501,-122.40296,25,7,1932,18.3],[37.78758,-122.40823,141,28,1943,12.5],[37.78116,-122.41133,42,13,1959,1.3],[37.79588,-122.3937,18,13,1962,57.6],[37.78319,-122.41086,44,13,1964,5.3],[37.7942,-122.39977,121,20,1965,10.3],[37.76319,-122.40032,16,0,1971,-14.0],[37.77387,-122.41129,38,7,2005,11.9],[37.76029,-122.38818,27,4,2041,15.4],[37.78562,-122.41083,53,12,2049,10.7],[37.77215,-122.41115,39,5,2052,0.1],[37.78955,-122.40834,122,21,2072,12.1],[37.7923,-122.40527,91,21,2074,6.7],[37.79425,-122.40279,104,30,2108,7.2],[37.76683,-122.40838,27,5,2129,4.4],[37.78759,-122.41109,89,28,2162,3.8],[37.79689,-122.39759,16,5,2163,64.3],[37.7656,-122.40775,20,5,2174,4.6],[37.77854,-122.41403,24,6,2176,6.8],[37.7809,-122.41386,15,11,2176,11.4],[37.77644,-122.41396,23,7,2183,-0.9],[37.77435,-122.41386,24,2,2212,12.7],[37.79664,-122.39986,37,13,2213,21.7],[37.78321,-122.41396,41,5,2230,9.0],[37.75844,-122.38822,34,11,2246,34.0],[37.7922,-122.40827,19,3,2254,23.3],[37.79437,-122.40546,143,37,2259,4.2],[37.78972,-122.41102,44,15,2277,5.9],[37.78544,-122.41375,65,23,2282,13.7],[37.77177,-122.41385,39,18,2291,-8.7],[37.76702,-122.41084,35,2,2292,-35.6],[37.79644,-122.40295,66,20,2321,10.4],[37.77837,-122.41587,21,6,2338,4.9],[37.78738,-122.41368,57,21,2357,15.7],[37.79446,-122.40771,102,25,2396,11.2],[37.79857,-122.3997,31,6,2404,84.0],[37.79196,-122.41079,25,3,2406,21.5],[37.79913,-122.39786,34,16,2407,16.1],[37.75695,-122.38791,14,2,2413,8.4],[37.76548,-122.41113,20,6,2413,-9.1],[37.76972,-122.41437,17,6,2417,-2.8],[37.77654,-122.41692,55,13,2441,2.3],[37.78131,-122.41686,31,14,2444,8.5],[37.7682,-122.4138,16,0,2447,-1.1],[37.79663,-122.4055,111,44,2461,23.2],[37.77416,-122.41675,33,5,2465,7.3],[37.78957,-122.41366,30,5,2467,26.6],[37.78328,-122.41697,51,15,2489,5.0],[37.79861,-122.40237,30,7,2507,24.1],[37.77162,-122.41694,23,4,2553,3.2],[37.78542,-122.41709,71,28,2560,2.0],[37.79453,-122.41074,17,7,2589,51.6],[37.7916,-122.41373,24,4,2592,-6.7],[37.79671,-122.40811,116,34,2609,7.9],[37.76272,-122.41116,15,3,2612,11.7],[37.76942,-122.41674,23,3,2622,-0.0],[37.79835,-122.40557,50,23,2624,15.1],[37.78773,-122.4168,37,10,2624,10.6],[37.76506,-122.41393,13,2,2640,7.7],[37.77617,-122.41948,31,7,2670,4.7],[37.78314,-122.4196,55,17,2713,6.7],[37.77446,-122.41976,24,4,2719,0.1],[37.78101,-122.42017,25,9,2730,10.2],[37.77212,-122.41935,30,5,2741,-2.9],[37.79668,-122.41055,28,9,2747,51.3],[37.76752,-122.4173,21,2,2755,3.6],[37.80129,-122.40195,16,1,2760,13.7],[37.7538,-122.3883,14,1,2762,7.9],[37.79012,-122.41721,27,7,2770,49.3],[37.76105,-122.41169,16,1,2774,40.5],[37.79443,-122.41369,14,6,2777,-11.8],[37.78548,-122.41967,49,14,2780,4.8],[37.75367,-122.39109,11,1,2780,13.2],[37.79888,-122.40819,133,61,2803,9.1],[37.76274,-122.41443,19,4,2829,-5.0],[37.79187,-122.41676,14,4,2832,20.4],[37.76946,-122.41947,18,3,2843,-2.4],[37.78763,-122.41969,87,36,2857,7.8],[37.76505,-122.41708,19,3,2873,21.2],[37.78151,-122.42182,15,0,2880,15.3],[37.75894,-122.41082,19,9,2894,-31.9],[37.78319,-122.42168,20,3,2894,5.3],[37.79896,-122.41036,28,14,2928,50.2],[37.77411,-122.42214,30,11,2932,-2.3],[37.77847,-122.42266,19,5,2935,5.7],[37.76745,-122.41957,15,1,2938,6.1],[37.77661,-122.42265,60,15,2942,-6.1],[37.76316,-122.41679,21,3,2968,19.0],[37.80076,-122.40836,53,17,2983,21.0],[37.78566,-122.42205,22,7,2987,17.4],[37.80333,-122.40255,26,4,2990,27.2],[37.79,-122.4202,95,46,3001,23.3],[37.79451,-122.41723,11,6,3030,15.1],[37.75138,-122.38823,14,1,3032,8.1],[37.77216,-122.42289,30,14,3041,12.8],[37.76983,-122.42217,23,8,3052,17.2],[37.7649,-122.4196,52,10,3072,-6.0],[37.79623,-122.41633,11,3,3083,72.4],[37.78756,-122.42263,73,13,3097,13.0],[37.79191,-122.42033,44,14,3106,24.3],[37.80087,-122.41103,30,12,3131,24.6],[37.778,-122.42501,10,1,3143,7.8],[37.75833,-122.4143,14,4,3151,-0.8],[37.76714,-122.42207,20,5,3153,26.4],[37.75345,-122.40578,19,3,3153,18.8],[37.78987,-122.42222,37,7,3157,12.2],[37.79468,-122.41894,19,6,3163,20.9],[37.76289,-122.4194,49,12,3174,10.0],[37.77648,-122.4254,59,22,3185,3.8],[37.77125,-122.4245,13,1,3203,28.2],[37.79194,-122.4219,43,18,3230,20.6],[37.76492,-122.42217,64,33,3269,-2.0],[37.78534,-122.42552,10,0,3274,15.4],[37.75861,-122.41674,14,4,3283,-20.2],[37.75315,-122.40839,17,6,3294,-22.5],[37.80555,-122.40537,18,4,3317,35.0],[37.76044,-122.41926,31,13,3322,30.7],[37.78765,-122.42528,19,4,3322,6.1],[37.76773,-122.42462,11,3,3335,25.5],[37.76984,-122.42582,22,7,3358,-16.8],[37.75221,-122.40842,12,4,3385,-33.2],[37.76289,-122.42225,21,11,3386,45.8],[37.7944,-122.42249,62,12,3409,11.3],[37.75306,-122.41086,17,4,3418,16.8],[37.79877,-122.41904,23,13,3449,155.5],[37.75837,-122.41918,48,10,3461,9.2],[37.79253,-122.42478,10,2,3486,-2.6],[37.80321,-122.41391,22,10,3492,42.5],[37.76056,-122.42183,32,13,3496,27.3],[37.75605,-122.41717,14,3,3509,-0.1],[37.79665,-122.42208,63,26,3515,16.1],[37.78746,-122.42777,10,4,3526,10.6],[37.80524,-122.41107,32,9,3531,70.9],[37.74705,-122.39673,11,3,3572,-12.5],[37.78575,-122.42889,26,12,3573,-5.2],[37.79407,-122.425,13,2,3583,34.5],[37.76899,-122.42849,22,8,3611,-5.9],[37.7473,-122.40025,11,1,3615,39.2],[37.75854,-122.42169,28,10,3621,-22.4],[37.75613,-122.41957,99,30,3654,3.9],[37.75222,-122.41411,33,8,3659,-10.7],[37.79857,-122.42251,33,12,3671,53.9],[37.76118,-122.42474,11,5,3672,-0.3],[37.76738,-122.42872,42,14,3686,-1.4],[37.80585,-122.41335,43,8,3699,26.5],[37.78692,-122.43011,16,7,3708,45.5],[37.77406,-122.43113,10,2,3715,9.5],[37.78542,-122.4307,72,40,3721,4.1],[37.74517,-122.38829,16,2,3722,-2.4],[37.77185,-122.43084,58,23,3732,-3.1],[37.7808,-122.43178,13,5,3746,-21.0],[37.78308,-122.43198,26,6,3788,-6.7],[37.80828,-122.41048,12,4,3793,28.2],[37.75389,-122.41907,48,10,3798,1.6],[37.76702,-122.43033,23,3,3834,-4.1],[37.74513,-122.39984,18,2,3840,22.3],[37.75587,-122.42215,16,7,3841,27.0],[37.75183,-122.41693,31,11,3846,-5.3],[37.79866,-122.42515,29,5,3865,5.6],[37.80574,-122.4168,33,3,3870,29.0],[37.78333,-122.433,32,15,3881,-18.1],[37.7791,-122.43378,10,1,3914,12.5],[37.74964,-122.41485,11,5,3930,0.9],[37.80982,-122.41034,10,2,3938,83.7],[37.80804,-122.41422,60,14,3943,33.7],[37.75432,-122.42195,19,14,3945,69.5],[37.78535,-122.43336,43,18,3949,6.7],[37.79017,-122.43197,16,2,3970,-1.4],[37.77182,-122.43391,16,4,3997,8.1],[37.76512,-122.43151,44,11,4005,-0.8],[37.75164,-122.41946,38,13,4006,1.1],[37.79723,-122.42842,16,3,4019,2.0],[37.74283,-122.39673,14,0,4035,10.2],[37.74328,-122.39971,10,0,4037,-10.6],[37.80767,-122.41674,49,16,4037,41.9],[37.74234,-122.38793,23,6,4038,1.6],[37.80134,-122.4251,28,10,4041,36.0],[37.78777,-122.43378,75,18,4044,-3.6],[37.80601,-122.41969,25,8,4057,15.7],[37.79817,-122.42824,44,9,4060,16.9],[37.76699,-122.43305,10,5,4060,-15.1],[37.74913,-122.41707,30,7,4091,-17.9],[37.78986,-122.43402,60,12,4130,18.8],[37.76079,-122.4306,12,1,4139,31.7],[37.8074,-122.41908,35,16,4141,27.6],[37.76455,-122.43323,30,11,4169,-4.4],[37.75185,-122.42248,12,2,4170,19.2],[37.74937,-122.41937,26,6,4194,-14.4],[37.80588,-122.42232,36,7,4203,10.0],[37.79189,-122.43436,32,1,4232,12.6],[37.74058,-122.38882,15,3,4233,1.0],[37.79742,-122.43112,48,14,4234,1.3],[37.80104,-122.42823,17,4,4239,25.1],[37.77199,-122.43679,33,13,4243,-0.6],[37.79823,-122.43066,27,6,4245,23.8],[37.78577,-122.4367,11,2,4246,2.4],[37.7764,-122.43753,14,7,4250,9.8],[37.74242,-122.40534,15,3,4267,-28.6],[37.7741,-122.4375,30,7,4271,16.5],[37.78943,-122.43615,11,0,4294,14.2],[37.76305,-122.43429,44,10,4320,-9.4],[37.77633,-122.43873,25,4,4357,-0.7],[37.78096,-122.43896,10,1,4377,-2.5],[37.77851,-122.43921,22,7,4391,-26.2],[37.80065,-122.4307,11,1,4393,24.4],[37.74706,-122.41934,27,5,4394,-0.4],[37.74004,-122.4002,15,0,4398,2.2],[37.77372,-122.43931,11,1,4434,23.8],[37.79726,-122.43384,54,13,4435,20.7],[37.74014,-122.40269,23,2,4440,12.3],[37.7606,-122.43439,63,23,4444,11.8],[37.78313,-122.43967,16,1,4460,-13.1],[37.76243,-122.4357,18,1,4462,1.3],[37.73808,-122.39019,12,2,4512,-5.0],[37.75866,-122.43413,16,4,4526,9.3],[37.78552,-122.44002,36,6,4528,-11.0],[37.79919,-122.43374,14,0,4532,85.9],[37.75171,-122.42819,33,10,4547,5.6],[37.76076,-122.43592,41,12,4557,-8.9],[37.74014,-122.40832,12,4,4597,-2.0],[37.78762,-122.4403,31,17,4598,-3.2],[37.79711,-122.43602,49,8,4598,1.8],[37.74508,-122.42024,43,22,4619,3.3],[37.80039,-122.43403,19,5,4623,-0.5],[37.80405,-122.43149,11,2,4670,-2.5],[37.74912,-122.42743,14,4,4693,-9.8],[37.77625,-122.44279,12,2,4713,-15.7],[37.79902,-122.43634,68,30,4722,5.9],[37.75146,-122.43082,35,11,4740,4.4],[37.78786,-122.44205,13,2,4754,7.9],[37.73779,-122.4054,11,0,4759,-28.2],[37.7444,-122.42204,16,5,4774,21.0],[37.8039,-122.43337,18,3,4792,21.1],[37.74697,-122.42706,13,5,4841,-11.0],[37.80651,-122.43161,10,3,4849,-9.8],[37.73669,-122.40536,17,12,4874,-37.7],[37.80059,-122.43721,50,20,4875,4.2],[37.73882,-122.41409,15,6,4937,-7.1],[37.74254,-122.42212,42,11,4945,14.5],[37.77616,-122.44554,23,7,4956,-17.2],[37.75124,-122.43376,49,13,4958,-14.4],[37.73991,-122.41754,10,2,4972,6.8],[37.78266,-122.44595,18,5,5005,-4.1],[37.73365,-122.39101,22,3,5006,-8.7],[37.79949,-122.43981,36,10,5016,13.8],[37.77021,-122.44538,40,16,5022,6.7],[37.80043,-122.43929,45,12,5025,17.4],[37.73895,-122.4168,25,12,5033,-5.3],[37.78779,-122.44596,17,0,5089,6.3],[37.75144,-122.43643,13,4,5132,12.9],[37.74092,-122.42297,28,10,5135,-6.4],[37.78264,-122.4478,12,4,5167,-0.5],[37.74302,-122.42722,16,10,5179,31.8],[37.79934,-122.44212,33,8,5189,-1.1],[37.80041,-122.4415,13,4,5195,46.7],[37.78787,-122.44757,28,2,5230,-28.4],[37.7315,-122.39191,12,4,5249,7.3],[37.76983,-122.44815,46,15,5269,7.9],[37.79884,-122.44489,19,3,5385,20.4],[37.78239,-122.45066,15,2,5415,-11.0],[37.78169,-122.45093,18,2,5433,-20.8],[37.77372,-122.45087,17,3,5444,17.1],[37.73117,-122.4053,19,5,5464,7.4],[37.78749,-122.45062,33,5,5485,19.8],[37.76943,-122.45091,45,21,5516,19.6],[37.76543,-122.44998,27,11,5537,24.8],[37.72884,-122.39357,18,6,5552,24.3],[37.78629,-122.45172,13,1,5558,-17.6],[37.79859,-122.4476,12,5,5591,85.2],[37.78229,-122.45302,10,1,5622,-32.2],[37.78148,-122.45326,20,5,5637,7.8],[37.72936,-122.40452,29,6,5643,-10.4],[37.7362,-122.42445,18,6,5643,21.9],[37.78721,-122.4531,22,6,5695,-6.5],[37.76974,-122.45316,11,5,5705,-2.1],[37.78613,-122.45347,14,2,5708,-7.8],[37.76755,-122.45309,15,3,5746,2.8],[37.76499,-122.45278,12,2,5787,0.8],[37.72653,-122.38848,10,2,5797,-14.4],[37.72657,-122.37993,12,2,5850,-13.7],[37.72694,-122.40317,28,3,5879,-3.2],[37.74344,-122.43948,19,2,5901,19.4],[37.78133,-122.45639,37,12,5910,3.5],[37.72438,-122.40224,18,4,6142,-6.2],[37.78115,-122.4593,24,4,6165,7.7],[37.78306,-122.45981,38,14,6224,-18.2],[37.73406,-122.43382,42,14,6319,1.0],[37.76363,-122.45858,14,5,6319,-5.9],[37.77712,-122.4624,15,8,6434,-10.0],[37.78114,-122.4624,22,9,6438,4.5],[37.78299,-122.46231,41,12,6442,6.8],[37.78093,-122.46446,20,10,6618,4.6],[37.78519,-122.46471,22,8,6675,6.4],[37.78287,-122.46507,52,14,6684,-17.0],[37.80295,-122.45922,11,0,6722,-20.1],[37.74441,-122.45322,30,6,6791,-14.6],[37.76485,-122.46545,37,19,6873,-1.8],[37.78282,-122.4678,34,8,6923,-6.6],[37.78082,-122.4681,24,5,6938,23.9],[37.76316,-122.46584,61,35,6950,19.0],[37.72659,-122.43338,27,12,6969,2.8],[37.76465,-122.46751,53,16,7055,-14.9],[37.7634,-122.46745,33,13,7082,-25.9],[37.72872,-122.44013,14,7,7130,3.7],[37.78287,-122.47064,12,2,7173,-1.6],[37.78099,-122.47083,25,4,7179,16.6],[37.72483,-122.43449,27,5,7186,3.7],[37.72398,-122.43621,16,3,7349,0.3],[37.78076,-122.47392,28,7,7449,30.4],[37.72259,-122.43653,36,13,7493,3.0],[37.73145,-122.45074,12,3,7535,-0.2],[37.76379,-122.47357,14,7,7596,8.6],[37.71132,-122.40487,17,3,7613,-7.3],[37.78048,-122.47641,29,8,7668,1.5],[37.72075,-122.4372,13,4,7696,-12.3],[37.71992,-122.43872,12,2,7847,-0.4],[37.76354,-122.47669,28,12,7870,-27.5],[37.77651,-122.47898,10,3,7894,2.9],[37.78255,-122.47901,16,7,7905,14.1],[37.78037,-122.47923,42,14,7915,7.2],[37.74049,-122.4658,27,11,7956,-5.7],[37.76348,-122.47909,46,12,8078,10.9],[37.71791,-122.43976,15,5,8085,-5.1],[37.73994,-122.46715,32,13,8089,21.5],[37.78054,-122.48198,35,10,8158,-14.1],[37.78296,-122.48197,15,4,8168,4.3],[37.75414,-122.47711,22,12,8192,-8.8],[37.74314,-122.47095,16,1,8197,10.8],[37.7161,-122.43998,31,9,8265,-0.4],[37.73851,-122.46842,51,11,8269,15.2],[37.71388,-122.43636,14,3,8310,10.3],[37.72402,-122.45398,10,2,8325,13.5],[37.76331,-122.482,32,11,8332,16.5],[37.75425,-122.47894,33,18,8340,-36.8],[37.71557,-122.44183,27,9,8402,18.9],[37.72292,-122.45378,12,7,8403,4.3],[37.73779,-122.46981,20,3,8416,-0.6],[37.78048,-122.48505,28,10,8427,3.8],[37.78253,-122.485,21,12,8432,-3.1],[37.74287,-122.47391,26,5,8441,6.7],[37.7242,-122.45694,14,6,8490,31.4],[37.73664,-122.47011,11,3,8507,3.1],[37.75404,-122.48204,33,8,8605,34.2],[37.71398,-122.44316,10,1,8614,21.1],[37.74295,-122.47634,31,16,8626,26.0],[37.72455,-122.45962,43,12,8631,11.0],[37.72523,-122.46229,33,11,8748,10.7],[37.713,-122.44436,10,3,8763,-20.7],[37.72651,-122.4647,14,2,8811,-7.8],[37.74276,-122.47868,29,10,8818,1.9],[37.73177,-122.47335,24,3,9048,-12.4],[37.74263,-122.48214,26,8,9097,5.6],[37.76107,-122.4904,14,3,9106,14.6],[37.78116,-122.49306,10,7,9133,3.0],[37.75383,-122.48846,13,2,9150,15.4],[37.77622,-122.49365,21,5,9185,34.3],[37.73092,-122.47605,10,2,9297,-2.5],[37.74252,-122.48474,29,8,9308,3.8],[37.75368,-122.4904,28,11,9318,9.4],[37.7758,-122.49656,19,12,9443,3.7],[37.72853,-122.47683,52,6,9507,8.0],[37.74259,-122.48797,14,9,9563,-5.5],[37.70884,-122.45313,16,1,9584,16.8],[37.7274,-122.47695,73,16,9589,9.5],[37.77568,-122.49849,13,2,9613,-2.4],[37.74239,-122.49031,28,5,9759,26.5],[37.721,-122.47679,14,4,10018,-2.1],[37.71778,-122.47377,15,3,10054,3.4],[37.72436,-122.48159,13,1,10119,-0.1],[37.73342,-122.49038,31,6,10218,10.1],[37.7106,-122.46791,13,3,10253,20.2],[37.73216,-122.49032,14,3,10283,-5.9],[37.76053,-122.50517,23,6,10391,21.1],[37.74202,-122.49858,26,7,10441,4.1],[37.75312,-122.5045,19,5,10526,21.0],[37.76049,-122.50755,14,4,10598,64.6],[37.77245,-122.50996,10,1,10638,33.5],[37.742,-122.50489,12,7,10956,-20.4]],"venue":{"lat":37.7786,"lon":-122.3893},"models":[{"name":"Tier 1 \u00b7 GBM","tier":1,"val":0.8655,"test":0.918,"r2":0.7569},{"name":"Tier 2 \u00b7 STGNN flow","tier":2,"val":1.0008,"test":1.0689,"r2":0.7237},{"name":"Tier 2 \u00b7 STGNN distance","tier":2,"val":1.0108,"test":1.0728,"r2":0.7241},{"name":"Tier 2 \u00b7 STGNN no graph","tier":2,"val":1.0151,"test":1.0897,"r2":0.7203}],"bands":[{"band":"0\u2013500 m","eff":44.6,"lo":39.8,"hi":49.9,"p":1e-05},{"band":"500 m\u20131 km","eff":14.8,"lo":12.2,"hi":17.4,"p":1e-05},{"band":"1\u20132 km","eff":4.5,"lo":3.3,"hi":5.7,"p":1e-05},{"band":"2\u20134 km","eff":1.2,"lo":0.4,"hi":2.0,"p":0.002},{"band":"> 4 km","eff":0.2,"lo":-0.6,"hi":1.1,"p":0.597}],"hours":[{"rh":-3,"eff":205.4,"ciw":58.6},{"rh":-2,"eff":235.4,"ciw":59.7},{"rh":-1,"eff":219.9,"ciw":59.0},{"rh":0,"eff":213.8,"ciw":54.6},{"rh":1,"eff":203.5,"ciw":54.5},{"rh":2,"eff":138.1,"ciw":49.8},{"rh":3,"eff":163.7,"ciw":52.6},{"rh":4,"eff":44.8,"ciw":37.0},{"rh":5,"eff":11.3,"ciw":34.3}]};
+
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const tip = document.getElementById('tip');
+function showTip(e, html){ tip.innerHTML = html; tip.style.opacity = 1;
+  const p = 14, w = 250;
+  let x = e.clientX + p, y = e.clientY + p;
+  if (x + w > innerWidth) x = e.clientX - w - p;
+  if (y + 90 > innerHeight) y = e.clientY - 90;
+  tip.style.left = x + 'px'; tip.style.top = y + 'px'; }
+function hideTip(){ tip.style.opacity = 0; }
+
+const SVGNS = 'http://www.w3.org/2000/svg';
+function el(tag, attrs){ const n = document.createElementNS(SVGNS, tag);
+  for (const k in attrs) n.setAttribute(k, attrs[k]); return n; }
+const fmt = (v, d=1) => (v>=0?'+':'') + v.toFixed(d);
+
+/* diverging ramp: bay blue (negative) -> neutral -> burnt orange (positive) */
+function ramp(v, cap=50){
+  const t = Math.max(-1, Math.min(1, v / cap));
+  const neg = css('--neg'), pos = css('--pos'), mid = css('--mid');
+  const hex = h => [1,3,5].map(i => parseInt(h.slice(i,i+2),16));
+  const mix = (a,b,f) => 'rgb(' + a.map((c,i)=>Math.round(c+(b[i]-c)*f)).join(',') + ')';
+  return t < 0 ? mix(hex(mid), hex(neg), -t) : mix(hex(mid), hex(pos), t);
+}
+
+/* ---------- stat tiles ---------- */
+(function(){
+  const t = [['452','250 m cells modelled'],['11.9 M','cell-hours in the panel'],
+             ['246','Giants home games'],['+44.6%','peak effect, 0–500 m'],
+             ['$85.5 k','taxable food spend per game'],['$21.0 M','per 246-game season']];
+  document.getElementById('tiles').innerHTML = t.map(([n,k]) =>
+    `<div class="tile"><div class="n">${n}</div><div class="k">${k}</div></div>`).join('');
+})();
+
+/* ---------- map ---------- */
+(function(){
+  const c = D.cells, host = document.getElementById('map');
+  const lat = c.map(d=>d[0]), lon = c.map(d=>d[1]);
+  const la0 = Math.min(...lat)-0.004, la1 = Math.max(...lat)+0.004;
+  const lo0 = Math.min(...lon)-0.004, lo1 = Math.max(...lon)+0.004;
+  const W = 900, kx = W/(lo1-lo0), asp = (la1-la0)/(lo1-lo0)/Math.cos(37.78*Math.PI/180);
+  const H = Math.round(W*asp), ky = H/(la1-la0);
+  const X = v => (v-lo0)*kx, Y = v => (la1-v)*ky;
+  const cw = 0.00284*kx, ch = 0.00225*ky;
+  const svg = el('svg',{viewBox:`0 0 ${W} ${H}`,role:'img',
+    'aria-label':'Map of San Francisco showing 452 modelled cells shaded by game-evening activity contrast'});
+
+  const vx = X(D.venue.lon), vy = Y(D.venue.lat);
+  [[500,'500 m'],[1000,'1 km'],[2000,'2 km']].forEach(([m,lab])=>{
+    const r = m/111320*kx/Math.cos(37.78*Math.PI/180);
+    svg.appendChild(el('circle',{cx:vx,cy:vy,r,fill:'none',stroke:css('--ink-3'),
+      'stroke-width':1,'stroke-dasharray':'3 4','opacity':.5}));
+    const t = el('text',{x:vx,y:vy-r-4,fill:css('--ink-3'),'font-size':10,
+      'text-anchor':'middle','font-family':'ui-monospace,monospace'});
+    t.textContent = lab; svg.appendChild(t);
+  });
+
+  /* Value-suppressing opacity: a 10-POI cell yields a far noisier contrast than a
+     200-POI one, and rendering both at full saturation would advertise signal the
+     thin cells do not have. Opacity tracks POI count so confidence is legible. */
+  const conf = np => 0.3 + 0.7 * Math.min(1, Math.max(0, (np - 10) / 40));
+  c.forEach(d=>{
+    const [la,lo,np,nf,dist,lift] = d;
+    const r = el('rect',{x:X(lo)-cw/2,y:Y(la)-ch/2,width:Math.max(cw-0.7,1),
+      height:Math.max(ch-0.7,1),fill:ramp(lift),'fill-opacity':conf(np),rx:1,class:'cell'});
+    r.addEventListener('mousemove',e=>showTip(e,
+      `<b>${fmt(lift)}%</b> game-evening contrast<br>${np} POIs · ${nf} food<br>${Math.round(dist)} m from home plate`));
+    r.addEventListener('mouseleave',hideTip);
+    svg.appendChild(r);
+  });
+
+  svg.appendChild(el('circle',{cx:vx,cy:vy,r:5,fill:'none',stroke:css('--ink'),'stroke-width':2}));
+  svg.appendChild(el('circle',{cx:vx,cy:vy,r:2,fill:css('--ink')}));
+  const vt = el('text',{x:vx+10,y:vy+4,fill:css('--ink'),'font-size':12,
+    'font-family':'ui-serif,Georgia,serif'});
+  vt.textContent = 'Oracle Park'; svg.appendChild(vt);
+  host.appendChild(svg);
+
+  document.getElementById('maplegend').innerHTML =
+    [['-50','−50%'],['-25','−25%'],['0','0'],['25','+25%'],['50','+50% or more']]
+      .map(([v,l])=>`<span><span class="sw" style="background:${ramp(+v)}"></span>${l}</span>`)
+      .join('') + `<span style="color:var(--ink-3)">n = ${D.cells.length} cells</span>`;
+})();
+
+/* ---------- model comparison ---------- */
+(function(){
+  /* viewBox authored near the rendered width: this figure spans the full column,
+     so a narrow viewBox would upscale ~2x and blow the label sizes out of step
+     with the half-width charts below. */
+  const m = D.models, W=900, rowH=46, H=m.length*rowH+58, L=272, R=86;
+  const max = 1.40, x = v => L + v/max*(W-L-R);
+  const svg = el('svg',{viewBox:`0 0 ${W} ${H}`,role:'img',
+    'aria-label':'Test mean absolute error by model'});
+  const bench = 1.3504;
+  svg.appendChild(el('line',{x1:x(bench),x2:x(bench),y1:6,y2:H-36,
+    stroke:css('--ink-3'),'stroke-width':1,'stroke-dasharray':'4 4'}));
+  const bl = el('text',{x:x(bench),y:H-18,fill:css('--ink-3'),'font-size':13,
+    'text-anchor':'middle','font-family':'ui-monospace,monospace'});
+  bl.textContent = 'benchmark 1.3504'; svg.appendChild(bl);
+
+  m.forEach((d,i)=>{
+    const y = 12+i*rowH, col = d.tier===1 ? css('--pos') : css('--neg');
+    const lab = el('text',{x:L-16,y:y+20,fill:css('--ink'),'font-size':15,
+      'text-anchor':'end'}); lab.textContent = d.name; svg.appendChild(lab);
+    const r = el('rect',{x:L,y:y+4,width:Math.max(x(d.test)-L,2),height:26,
+      fill:col,rx:4,opacity:d.tier===1?1:.86});
+    r.addEventListener('mousemove',e=>showTip(e,
+      `<b>${d.name}</b><br>test MAE ${d.test.toFixed(4)}<br>val ${d.val.toFixed(4)} · R² ${d.r2.toFixed(4)}`));
+    r.addEventListener('mouseleave',hideTip); svg.appendChild(r);
+    const v = el('text',{x:x(d.test)+10,y:y+22,fill:css('--ink-2'),'font-size':14,
+      'font-family':'ui-monospace,monospace'}); v.textContent = d.test.toFixed(4);
+    svg.appendChild(v);
+  });
+  document.getElementById('cmp').appendChild(svg);
+})();
+
+/* ---------- effect by band ---------- */
+(function(){
+  const b = D.bands, W=520, rowH=42, H=b.length*rowH+40, L=104, R=18;
+  const lo = -6, hi = 56, x = v => L + (v-lo)/(hi-lo)*(W-L-R);
+  const svg = el('svg',{viewBox:`0 0 ${W} ${H}`,role:'img',
+    'aria-label':'Modelled game-day effect by distance band with 95% intervals'});
+  svg.appendChild(el('line',{x1:x(0),x2:x(0),y1:4,y2:H-26,stroke:css('--rule'),'stroke-width':1}));
+  [0,20,40].forEach(v=>{ const t=el('text',{x:x(v),y:H-10,fill:css('--ink-3'),
+    'font-size':10,'text-anchor':'middle','font-family':'ui-monospace,monospace'});
+    t.textContent = v+'%'; svg.appendChild(t); });
+  b.forEach((d,i)=>{
+    const y = 14+i*rowH, sig = d.p < 0.05, col = sig ? css('--pos') : css('--ink-3');
+    const lab = el('text',{x:L-12,y:y+4,fill:css('--ink'),'font-size':12,
+      'text-anchor':'end'}); lab.textContent = d.band; svg.appendChild(lab);
+    svg.appendChild(el('line',{x1:x(d.lo),x2:x(d.hi),y1:y,y2:y,stroke:col,
+      'stroke-width':2,'stroke-linecap':'round',opacity:.55}));
+    const c = el('circle',{cx:x(d.eff),cy:y,r:5,fill:col,stroke:css('--raised'),
+      'stroke-width':2,class:'pt'});
+    c.addEventListener('mousemove',e=>showTip(e,
+      `<b>${d.band}</b><br>${fmt(d.eff)}%  [${fmt(d.lo)}, ${fmt(d.hi)}]<br>p = ${d.p<0.0001?'<0.0001':d.p.toFixed(4)}`));
+    c.addEventListener('mouseleave',hideTip); svg.appendChild(c);
+    const v = el('text',{x:x(d.hi)+8,y:y+4,fill:sig?css('--ink'):css('--ink-3'),
+      'font-size':11,'font-family':'ui-monospace,monospace'});
+    v.textContent = fmt(d.eff)+'%'; svg.appendChild(v);
+  });
+  document.getElementById('bands').appendChild(svg);
+})();
+
+/* ---------- effect by relative hour ---------- */
+(function(){
+  const h = D.hours, W=520, H=210, L=44, R=14, T=12, B=38;
+  const max = 260, x = (v,i) => L + i*(W-L-R)/(h.length-1), y = v => T + (1-v/max)*(H-T-B);
+  const svg = el('svg',{viewBox:`0 0 ${W} ${H}`,role:'img',
+    'aria-label':'Activity contrast within 500 m by hour relative to first pitch'});
+  [0,100,200].forEach(v=>{
+    svg.appendChild(el('line',{x1:L,x2:W-R,y1:y(v),y2:y(v),stroke:css('--rule'),'stroke-width':1}));
+    const t = el('text',{x:L-8,y:y(v)+4,fill:css('--ink-3'),'font-size':10,
+      'text-anchor':'end','font-family':'ui-monospace,monospace'});
+    t.textContent = v+'%'; svg.appendChild(t); });
+  const bw = (W-L-R)/h.length*0.62;
+  h.forEach((d,i)=>{
+    const xa = x(0,i), col = d.rh===0 ? css('--pos') : css('--neg');
+    const r = el('rect',{x:xa-bw/2,y:y(d.eff),width:bw,height:Math.max(y(0)-y(d.eff),1),
+      fill:col,rx:3,opacity:d.rh===0?1:.72});
+    r.addEventListener('mousemove',e=>showTip(e,
+      `<b>${d.rh>0?'+':''}${d.rh} h</b> from first pitch<br>${fmt(d.eff)}% · CI width ${d.ciw.toFixed(1)}pp`));
+    r.addEventListener('mouseleave',hideTip); svg.appendChild(r);
+    const t = el('text',{x:xa,y:H-14,fill:d.rh===0?css('--ink'):css('--ink-3'),
+      'font-size':10,'text-anchor':'middle','font-family':'ui-monospace,monospace'});
+    t.textContent = d.rh===0 ? '0' : (d.rh>0?'+':'')+d.rh; svg.appendChild(t);
+  });
+  const cap = el('text',{x:(L+W-R)/2,y:H-2,fill:css('--ink-3'),'font-size':9.5,
+    'text-anchor':'middle'}); cap.textContent = 'hours relative to first pitch';
+  svg.appendChild(cap);
+  document.getElementById('hours').appendChild(svg);
+})();
+</script>
