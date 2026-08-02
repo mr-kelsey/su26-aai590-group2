@@ -22,6 +22,9 @@ model = [
     "statsmodels>=0.14",   # DynamicFactorMQ, SARIMAX, MIDAS-in-state-space
     "numpy>=1.26",
     "scipy>=1.11",
+    "lightgbm>=4.3",       # Tier 1 counterfactual forecaster (quantile objective)
+    "scikit-learn>=1.4",   # metrics, CV splitters, k-means for cell typology
+    "torch>=2.2",          # Tier 2 STGNN; MPS backend on Apple silicon
     # "tempdisagg",        # Chow-Lin / Denton reconciliation baseline (add when needed)
 ]
 aws = [
