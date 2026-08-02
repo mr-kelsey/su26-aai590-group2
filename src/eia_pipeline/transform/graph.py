@@ -1,19 +1,19 @@
 """Edge sets for the Tier 2 spatiotemporal graph. Three families, ablated separately.
 
-We recorded what we expected here before fitting anything, so the outcome could not be rationalised after the fact. Citywide, the hourly residual correlation between adjacent cells is only about 0.11 at 250m and decays to roughly 0.01 by 1km. That is about a quarter of the 0.445 we measured inside the dense 5km panel, and the gap turns out to be density rather than distance:
+Citywide, the hourly residual correlation between adjacent cells is about 0.11 at 250m, decaying to roughly 0.01 by 1km. That is a quarter of the 0.445 inside the dense 5km panel, and the gap tracks density rather than distance:
 
     pair density (min POI of the two)    mean r at <=500m
     dense (>=40)                          0.202
     mid   (20-39)                         0.102
     thin  (<20)                           0.055
 
-So the graph carries real information among the dense downtown cells and almost none among the thin outer ones, which also means a uniform distance kernel is mis-specified. We therefore expected Tier 2's gain over the pooled Tier 1 GBM to be modest. Per spec section 12.5, an STGNN that cannot beat Tier 1 is a reportable finding rather than a failure.
+So the graph carries information among the dense downtown cells and little among the thin outer ones, which makes a uniform distance kernel mis-specified. It also bounds how much Tier 2 can gain over the pooled Tier 1 GBM.
 
 The three families we build:
 
   contiguity  queen adjacency on the grid. The naive spatial prior.
-  distance    k-NN weighted by the empirical correlation function rather than an arbitrary Gaussian, and scaled by pair density as well, since that is what the measurement above says actually governs the coupling.
-  flow        cosine over VISITOR_HOME_CBGS, which is where visitors come from. This is our OD-like signal, the closest analogue to a PeMS OD matrix, and the only family that can connect functionally linked cells that sit far apart.
+  distance    k-NN weighted by the empirical correlation function rather than an arbitrary Gaussian, and scaled by pair density as well, since the measurement above says density governs the coupling.
+  flow        cosine over VISITOR_HOME_CBGS, which is where visitors come from. This is our OD-like signal and the closest analogue we have to a PeMS OD matrix. It is also the only family that can connect functionally linked cells that sit far apart.
 """
 from __future__ import annotations
 

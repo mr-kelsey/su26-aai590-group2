@@ -4,8 +4,8 @@ Why this exists when `silver/occupancy_poi_hour` already has hourly presence:
 silver is capped at 5km from Oracle Park (12,095 POIs) and starts 2023. Bronze
 covers the whole city (17,826 SF POIs, 334 weeks from 2020-01-06), which is what
 lets presence be calibrated against CDTFA, whose grain is the city (SF is a
-consolidated city-county, so county grain = city grain). See the rev-2 design in
-docs/superpowers/specs/2026-07-31-citywide-spend-nowcast-design.md.
+consolidated city-county, so county grain = city grain). docs/PIPELINE.md walks
+through where this sits in the run order.
 
 TWO ARRAYS, TWO UNITS. Do not mix them:
   VISITS_BY_DAY       7 elements   -> VISITS (reconciles to VISIT_COUNTS)
@@ -16,7 +16,7 @@ all 334 DATE_RANGE_START values are Mondays), so for a 1-based array index i:
     day  = DATE_RANGE_START + (i-1) // 24 days      (hourly; (i-1) for daily)
     hour = (i-1) % 24
 
-We check this mapping with verify_alignment() before trusting anything downstream. Silver was built from this same bronze by the team pipeline, so if our explode is right the two should match exactly, and an off-by-one would otherwise look perfectly plausible in every chart we draw from it.
+We check this mapping with verify_alignment() before trusting anything downstream. Silver was built from this same bronze by the team pipeline, so if our explode is right the two should match exactly, and an off-by-one would otherwise look plausible in every chart we draw from it.
 """
 from __future__ import annotations
 
@@ -33,7 +33,7 @@ DAYS_PER_WEEK = 7
 
 
 def medallion_uri(layer: str, *parts: str) -> str:
-    """AWS bucket pull is structured as: s3://{S3_BUCKET}/{layer}/{parts...}. We build the path here rather than using settings.s3_uri(), because that helper prepends our own eia-nowcast/ prefix and the bronze, silver and gold layers sit alongside that prefix rather than inside it. The bucket name still comes from the environment; only the layer name is written literally. We raise here if S3_BUCKET is unset so the failure shows up at config time instead of as a confusing read error later.
+    """AWS bucket pull is structured as: s3://{S3_BUCKET}/{layer}/{parts...}. We build the path here rather than using settings.s3_uri(), because that helper prepends our own eia-nowcast/ prefix and the bronze, silver and gold layers sit alongside that prefix rather than inside it. The bucket name still comes from the environment, and only the layer name is written literally. We raise here if S3_BUCKET is unset so the failure shows up at config time instead of as a confusing read error later.
     """
     if not settings.s3_bucket:
         raise RuntimeError("S3_BUCKET not set. See .env.example")
@@ -47,8 +47,8 @@ def bronze_patterns() -> str:
     This is a function rather than a module constant on purpose. Building the URI
     at import time means the module cannot be imported at all without a configured
     S3_BUCKET, which breaks a fresh checkout and blocks pytest from even collecting
-    the tests. Resolving it lazily keeps the config error where it belongs, at the
-    point where we actually try to read.
+    the tests. Resolving it lazily puts the config error at the point where we actually
+    try to read.
     """
     return medallion_uri("bronze", "advan_weekly_patterns", "*.parquet")
 

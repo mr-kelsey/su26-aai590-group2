@@ -1,8 +1,8 @@
 """Tier 3: held-out-venue generalisation via a crossover design.
 
-With only one venue we cannot separate an event effect from the possibility that a particular neighbourhood simply behaves differently on summer evenings. Any model would happily attribute a Mission Bay quirk to the ballpark.
+With only one venue we cannot separate an event effect from a neighbourhood that behaves differently on summer evenings, so a Mission Bay quirk would get attributed to the ballpark.
 
-Chase Center gives us the test. It sits 1,188 m from Oracle Park and has 211 event days that do not coincide with a Giants game. We drop the 45 days that do coincide rather than controlling for them, since attributing a shared day to either venue would beg the question. Their 0-500 m bands share no cells at all, so we can estimate a 2x2:
+Chase Center gives us a second venue. It sits 1,188 m from Oracle Park and has 211 event days that do not coincide with a Giants game. We drop the 45 days that do coincide rather than controlling for them, since a shared day cannot be attributed to either venue. Their 0-500 m bands share no cells, so we can estimate a 2x2:
 
                      bands centred on Oracle | bands centred on Chase
     Giants-only days        own-venue        |      cross
@@ -10,9 +10,11 @@ Chase Center gives us the test. It sits 1,188 m from Oracle Park and has 211 eve
 
 If the effect follows the venue, the diagonal is strong and the off-diagonal is weak. If instead we are picking up a generic Mission Bay evening pattern, all four cells light up and the near-field result means much less than it appears.
 
-This is the strongest generalisation claim we can make from the data, and unlike a held-out time split it cannot be satisfied by a model that has simply memorised where the ballpark is.
+This is a specification check rather than a held-out test. We pool every qualifying event day, 201 Giants-only and 211 Chase-only, instead of fitting on some and scoring on the rest. Splitting them would not add much here, because a neighbourhood story predicts that all four cells light up whichever days go in, so the pattern across the 2x2 carries the argument rather than the particular sample. The counterfactual model underneath is still trained on strict-control hours only, so no event day at either venue informs it.
 
-One caveat on precision: Chase's inner ring holds only one qualifying cell against Oracle's five, because Mission Bay south of the ballpark is newer and lower-POI development. Chase's 0-500 m estimate is therefore noisier, and its interval deserves more weight than its point estimate.
+The crossover does test whether the effect attaches to the venue or to the part of town, and a held-out time split cannot. A model that had memorised where the ballpark is would pass a time split and still fail this check.
+
+One caveat on precision: Chase's inner ring holds only one qualifying cell against Oracle's five, because Mission Bay south of the ballpark is newer and lower-POI development. That makes Chase's 0-500 m estimate noisier, so we put more weight on its interval than on its point estimate.
 """
 from __future__ import annotations
 

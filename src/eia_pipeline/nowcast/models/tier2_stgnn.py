@@ -1,8 +1,8 @@
 """Tier 2: spatiotemporal graph network over the 452-cell citywide panel.
 
-We give this the same information set as Tier 1: identical covariates, the identical rolling baselines, the identical control-only masking. The only thing Tier 2 adds is structure, in that predictions are coupled across space by graph convolution and across time by dilated causal convolution. That way the gap between the two tiers measures the graph and nothing else.
+We give this the same information set as Tier 1, meaning the same covariates, the same rolling baselines and the same control-only masking. Tier 2 only adds structure, so predictions are coupled across space by graph convolution and across time by dilated causal convolution. The gap between the two tiers then measures the graph and nothing else.
 
-It is deliberately not autoregressive, and that is the load-bearing choice in this module. A classic traffic STGNN predicts speed at t from speed at t-1..t-T. Doing that here would be fatal, because during a game the recent hours already contain the game's effect, so the model would predict the inflated level, the residual would collapse toward zero, and the measurement would destroy itself. The model only sees calendar, weather, cell statics and a baseline built exclusively from prior control days. It never sees recent raw activity.
+We deliberately did not make this autoregressive. A classic traffic STGNN predicts speed at t from speed at t-1..t-T. That does not work here, because during a game the recent hours already contain the game's effect, so the model would predict the inflated level, the residual would collapse toward zero, and we would lose the measurement. The model only sees calendar, weather, cell statics and a baseline built exclusively from prior control days, and it never sees recent raw activity.
 
 On memory: most of our covariates are global, meaning the same for every cell at a given hour, so materialising a full [T, N, F] array would waste about 6x. We split them instead:
 
@@ -10,13 +10,13 @@ On memory: most of our covariates are global, meaning the same for every cell at
     x_g   [T, F_g]    global time-varying    (calendar, weather)                  ~1 MB
     x_s   [N, F_s]    per-cell static        (n_poi, food_share, geometry)         tiny
 
-The broadcast happens inside forward(). That keeps the working set small enough to be comfortable on an 8 GB laptop, which is where this actually runs.
+The broadcast happens inside forward(). That keeps the working set small enough to be comfortable on an 8 GB laptop, which is the machine we run this on.
 
 The graph convolution keeps separate self and neighbour weights:
 
     H' = act( H W_self + A_hat H W_neigh )
 
-so the model can drive W_neigh toward zero if the graph carries no information. Given that we measured citywide adjacent-cell correlation at only about 0.114, that is a real possibility, and the architecture has to be able to express it. Otherwise a useless graph would be forced to inject noise and we would misread the ablation.
+so the model can drive W_neigh toward zero if the graph carries no information. We measured citywide adjacent-cell correlation at only about 0.114, so that is a real possibility and the architecture has to be able to express it. Otherwise a useless graph would be forced to inject noise and we would misread the ablation.
 """
 from __future__ import annotations
 

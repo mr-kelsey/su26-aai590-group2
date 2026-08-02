@@ -1,10 +1,10 @@
 """Drift-corrected game-day effect estimation over the full window.
 
-Three choices here carry the weight.
+We made three choices in setting this up.
 
-First, we fit the counterfactual model on all strict-control hours across every split rather than just train. It never sees a treated hour in any split, so residuals on game hours stay causally readable, but it is far better calibrated across the whole window, which matters because of the 27% construction drift. The held-out forecasting metrics in tier1_gbm stand separately as our evidence on model quality; this model exists to measure effects, not to demonstrate generalisation.
+First, we fit the counterfactual model on all strict-control hours across every split rather than just train. It never sees a treated hour in any split, so residuals on game hours stay causally readable, but it is far better calibrated across the whole window, which matters because of the 27% construction drift. The held-out forecasting metrics in tier1_gbm stand separately as our evidence on model quality. We fit this model to measure effects, and we do not use it to show generalisation.
 
-Second, effects are a difference-in-differences on residuals: the game-hour residual minus the contemporaneous control-hour residual. The model over-predicts by a drifting amount (bias +0.164 on val, +0.254 on test), and differencing against controls from the same period cancels it. A raw residual would quietly absorb the drift instead.
+Second, effects are a difference-in-differences on residuals: the game-hour residual minus the contemporaneous control-hour residual. The model over-predicts by a drifting amount (bias +0.164 on val, +0.254 on test), and differencing against controls from the same period cancels it. A raw residual would absorb the drift instead.
 
 Third, we cluster inference at the day, because cell-hours within a day are heavily correlated. Naive cell-hour t-stats overstate significance by roughly 3x: the 0-500m band reads t=7.2 unclustered against z=+2.2 when compared to placebo. So we collapse residuals to day x band means first and bootstrap over days.
 """
@@ -33,16 +33,12 @@ def _band_expr(col: str = "dist_venue_m") -> pl.Expr:
 def fit_full_control_model(n_estimators: int = 600, seed: int = 0):
     """Train on every strict-control hour, all splits. Returns (model, frame)."""
     import lightgbm as lgb
-    from .models.tier1_gbm import load, _xy
+    from .models.tier1_gbm import load, _xy, lgb_params
 
     df = load("clean_control_strict")
     ctl = df.filter(pl.col("is_control"))
     X, y = _xy(ctl)
-    m = lgb.LGBMRegressor(
-        objective="l2", n_estimators=n_estimators, learning_rate=0.05,
-        num_leaves=255, min_child_samples=100, subsample=0.8, subsample_freq=1,
-        colsample_bytree=0.8, random_state=seed, verbose=-1, n_jobs=-1,
-    )
+    m = lgb.LGBMRegressor(objective="l2", **lgb_params(n_estimators, seed))
     m.fit(X, y)
     print(f"  fit on {ctl.height:,} strict-control hours (all splits)")
     return m, df

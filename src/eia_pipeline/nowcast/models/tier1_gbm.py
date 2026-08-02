@@ -1,12 +1,12 @@
 """Tier 1: pooled gradient-boosted counterfactual forecaster.
 
-This is our measurement model. We train it on non-event hours only and give it no event features, so its residual on an event hour is causally readable: the model has never seen an event and cannot have partially fitted one. It is also the one artifact here with genuine held-out ground truth, since control hours have observed outcomes and the MAE and RMSE we report on them are real numbers rather than proxies. Very little else in this project can be validated that directly.
+This is our measurement model. We train it on non-event hours only and give it no event features, so its residual on an event hour is causally readable. The model has never seen an event and cannot have partially fitted one. It is also the one artifact here with held-out ground truth. Control hours have observed outcomes, so the MAE and RMSE we report on them are real numbers rather than proxies.
 
-It doubles as the benchmark Tier 2 has to beat. With 452 nodes and dense data on each one, a well-featured GBM is hard to improve on, and we would rather report that honestly than bury it.
+We also use it as the benchmark we measure Tier 2 against. We have 452 nodes with dense data on each one, so a well-featured GBM is a strong baseline.
 
-We train on clean_control_strict rather than the shipped clean_control, because the shipped flag leaves Chase Center, Moscone, citywide and street-fair days in the control pool: 828 days flagged against 581 that are genuinely clean. We evaluate both so the sensitivity is something we measured rather than something we assumed.
+We train on clean_control_strict rather than the shipped clean_control, which leaves Chase Center, Moscone, citywide and street-fair days in the control pool. 828 days carry the shipped flag but only 581 are event-free. We ran both and the difference is -0.3% on test MAE.
 
-We deliberately leave n_poi_reporting out of the features. It counts POIs with a non-zero hour, so person_hours = 0 forces it to 0 and it leaks the target. Panel health enters instead as n_poi_live, the distinct POIs reporting across a whole ISO week, which tracks the 27% construction drift without encoding any single hour's outcome.
+We deliberately leave n_poi_reporting out of the features. It counts POIs with a non-zero hour, so person_hours = 0 forces it to 0 and it leaks the target. We use n_poi_live for panel health instead. It counts the distinct POIs reporting across a whole ISO week, and it tracks the 27% construction drift without encoding any single hour's outcome.
 """
 from __future__ import annotations
 
@@ -21,12 +21,12 @@ TARGET = "person_hours"
 
 FEATURES = [
     "unit_code",        # categorical, 452 cells
-    # Option B, at three lookback depths rather than one. k=8 alone spanned a
-    # median 112 calendar days on game days (max 203) because ~47% of same-dow
-    # candidates are event days and get skipped. RMSE has an interior optimum
-    # near k=3-4, and combining depths beats any single one. cap120 is a RANGE
-    # ceiling, free on accuracy, taken to stay inside v0's +/-120 convention.
-    # Given to Tier 2 as well, so the ablation tests the graph not the features.
+    # Three lookback depths. A single deep baseline reaches back a median of
+    # 112 calendar days on game days and as far as 203, because ~47% of
+    # same-dow candidates get skipped as event days. RMSE turns out to have an
+    # interior optimum around k=3 to 4, and combining depths beats any single
+    # one. cap120 is a RANGE ceiling. Tier 2 gets the same three, so the
+    # ablation tests the graph and not the features.
     "base_k2", "base_k4", "base_cap120", "n_cap120",
     "hour", "dow", "month",
     "t_index",          # drift: days since window start
@@ -36,6 +36,30 @@ FEATURES = [
     "us_federal_holiday",
 ]
 CATEGORICAL = ["unit_code"]
+
+
+def lgb_params(n_estimators: int = 600, seed: int = 0, **override) -> dict:
+    """The LightGBM settings every GBM in this project trains under.
+
+    They live in one place because the measurement model here and the full-window
+    model in nowcast/effects.py are meant to be the same model on different training
+    sets. If we kept two copies of the same dict they would drift apart, and we would
+    not notice, because both copies would still fit and the effect estimate would
+    stop being comparable to the held-out metrics.
+
+    deterministic and force_row_wise are set so a rerun reproduces a published number
+    exactly. Two fits under these settings return bit-identical residuals across all
+    5,475 day by band cells. Without them LightGBM picks its histogram construction by
+    a timing test, so a fit can depend on machine load. We have not characterised how
+    large that variation gets, and we do not want a figure in a document to depend
+    on it at all. These settings cost some fit speed.
+    """
+    p = dict(n_estimators=n_estimators, learning_rate=0.05, num_leaves=255,
+             min_child_samples=100, subsample=0.8, subsample_freq=1,
+             colsample_bytree=0.8, random_state=seed, verbose=-1, n_jobs=-1,
+             deterministic=True, force_row_wise=True)
+    p.update(override)
+    return p
 
 
 def load(control_col: str = "clean_control_strict") -> pl.DataFrame:
@@ -96,9 +120,7 @@ def fit(control_col: str = "clean_control_strict", n_estimators: int = 600,
     Xva, yva = _xy(va)
     Xte, yte = _xy(te)
 
-    common = dict(n_estimators=n_estimators, learning_rate=0.05, num_leaves=255,
-                  min_child_samples=100, subsample=0.8, subsample_freq=1,
-                  colsample_bytree=0.8, random_state=seed, verbose=-1, n_jobs=-1)
+    common = lgb_params(n_estimators, seed)
 
     med = lgb.LGBMRegressor(objective="l2", **common)
     med.fit(Xtr, ytr, eval_set=[(Xva, yva)],

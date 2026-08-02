@@ -10,16 +10,16 @@ The chain, and what each link is anchored to:
   4. Apply the measured per-band presence effect to the
      evening share of those dollars                        <- the causal step
 
-Drifting velocity does not break this, which is worth explaining because it looks like it should. Over 2023-2026 our citywide food visits are flat, up 2%, while CDTFA dollars rise 23%. Nearly all of that growth is price rather than volume, and dollars per visit drift up 21%. That would be fatal to a fixed-coefficient velocity model. It is not fatal here, because Denton reconciles every quarter exactly, so cross-quarter drift is absorbed by construction. The method only needs daily dollars to track daily visits within a quarter, which is a much weaker claim. The drift does mean we cannot read velocity as a structural parameter, and we cannot extrapolate beyond the anchor window. This module does neither.
+Drifting velocity does not break this, even though it looks like it should. Over 2023-2026 our citywide food visits are flat, up 2%, while CDTFA dollars rise 23%. Nearly all of that growth is price rather than volume, and dollars per visit drift up 21%. A fixed-coefficient velocity model would break on that. It does not break the method here, because Denton reconciles every quarter exactly, so cross-quarter drift is absorbed by construction. The method only needs daily dollars to track daily visits within a quarter, which is a much weaker claim. The drift does mean we cannot read velocity as a structural parameter, and we cannot extrapolate beyond the anchor window. This module does neither.
 
-The evening share is not optional. Our effects are estimated on hours 16-23, so they may only be applied to the evening portion of a day's dollars, which we measured at 34.5% of food-POI activity. Applying an evening effect to a full day would inflate the result by roughly 3x.
+We have to apply the evening share. Our effects are estimated on hours 16-23, so they may only be applied to the evening portion of a day's dollars, which we measured at 34.5% of food-POI activity. Applying an evening effect to a full day would inflate the result by roughly 3x.
 
 What this number is not:
   - not retail, lodging, parking, transport, or any in-stadium concession
   - not indirect or induced activity; direct visitor spend only (D7)
   - not total spend; CDTFA measures taxable transactions only
 
-It is therefore a floor on a narrow and well-anchored slice, which is the opposite of how event impact studies usually go wrong.
+It is therefore a floor on a narrow and well-anchored slice. Event impact studies usually go wrong the other way and overstate.
 """
 from __future__ import annotations
 
@@ -31,16 +31,22 @@ from ..settings import settings
 
 VENUE_LAT, VENUE_LON = 37.7786, -122.3893
 FOOD_NAICS = "722%"          # CDTFA business group C08
-WINDOW = ("2023-01-01", "2025-12-31")
+# Matched to the window the band effects were estimated on. Running the dollars over
+# the full 2023 to 2025 range instead moves the per-game figure by 2.6%. We picked
+# this window to keep the two halves consistent.
+WINDOW = ("2023-01-01", "2024-12-31")
 
-# Measured per-band effects (day-clustered bootstrap, 246 games, improved
-# counterfactual). >4km is not distinguishable from zero (p=0.60) and enters as 0
-# rather than as its noisy point estimate.
+# Measured per-band effects: 163 games across 2023 and 2024, day-clustered bootstrap,
+# 2,000 draws. We use those two years rather than the full window because the vendor
+# panel thins through 2025 and inflates the measured lift there. The reasoning and the
+# evidence are in docs/04_data_exploration.md section 7. Beyond 4km the effect is not
+# distinguishable from zero (p=0.08) and enters as 0 rather than as its noisy point
+# estimate.
 BAND_EFFECTS = {
-    "0-500m":   (44.6, 39.8, 49.9),
-    "500m-1km": (14.8, 12.2, 17.4),
-    "1-2km":    ( 4.5,  3.3,  5.7),
-    "2-4km":    ( 1.2,  0.4,  2.0),
+    "0-500m":   (37.3, 32.4, 42.2),
+    "500m-1km": (14.3, 11.1, 17.5),
+    "1-2km":    ( 3.0,  1.7,  4.4),
+    "2-4km":    ( 1.1,  0.1,  2.1),
     ">4km":     ( 0.0,  0.0,  0.0),
 }
 

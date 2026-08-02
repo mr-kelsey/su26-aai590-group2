@@ -6,7 +6,7 @@ We build two panels rather than one because the hourly and daily source arrays a
 
   cell_day   Unit x date visits over the full bronze span. This is the clean series, and it carries the level for the dollars bridge.
 
-One thing to watch: the bronze explode keeps only the non-zero rows, so a missing cell-hour is a zero that was never written rather than a null. We build cell_hour against a full spine of cells x dates x hours and zero-fill it, because otherwise every mean we compute downstream uses the wrong denominator and comes out inflated. We also carry n_poi_reporting so the vendor drift is something we can model rather than a confound we cannot see.
+The bronze explode keeps only the non-zero rows, so a missing cell-hour is a zero that was never written rather than a null. We build cell_hour against a full spine of cells x dates x hours and zero-fill it, because otherwise every mean we compute downstream uses the wrong denominator and comes out inflated. We also carry n_poi_reporting so the vendor drift is something we can model rather than a confound we cannot see.
 """
 from __future__ import annotations
 
@@ -28,7 +28,7 @@ POI_CELL = f"read_parquet('{BASE}/poi_cell.parquet')"
 def build_cell_hour(con=None, start: str = HOURLY_START, end: str = HOURLY_END) -> Path:
     """Dense unit x date x hour person-hours, plus the reporting-POI count.
 
-    Written per calendar year is not enough here: we need the full spine, so the
+    Writing per calendar year is not enough here. We need the full spine, so the
     query builds every cell x date x hour combination and left-joins the observed
     rows onto it.
     """

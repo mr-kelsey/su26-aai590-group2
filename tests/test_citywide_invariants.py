@@ -1,12 +1,12 @@
-"""The three invariants whose violation is silent. No network, local fixtures only.
+"""Tests for the three invariants that fail silently. No network, local fixtures only.
 
 We picked these three because each one, if broken, produces output that looks entirely plausible and would not be caught by reading the code:
 
   1. day alignment      an off-by-one shifts every event effect by a day, and every chart still renders
-  2. trailing baseline  a baseline that peeks forward inflates every held-out metric, and the model just looks good
+  2. trailing baseline  a baseline that peeks forward inflates every held-out metric, and the model scores better than it should
   3. dense spine        averaging a sparse table without zero-filling divides by the wrong denominator and inflates every mean
 
-We deliberately do not assert effect sizes, MAEs or dollar figures. Those move with the data, and pinning them would turn this suite into a change-detector that everyone learns to ignore. These assert the structural properties that make those numbers mean anything.
+We do not assert effect sizes, MAEs or dollar figures, because those move with the data. These tests assert the structural properties underneath them.
 """
 import datetime as dt
 import types
@@ -147,3 +147,57 @@ def test_cell_hour_spine_is_dense_and_zero_filled():
     assert sparse_mean == pytest.approx(5.0)      # 15/3, the wrong denominator
     assert dense_mean == pytest.approx(15 / 96)   # 15/96, the right one
     assert sparse_mean > 30 * dense_mean          # scale of the error if skipped
+
+
+# ------------------------------------------------- 4. composition is multiplicative
+
+def test_composition_multiplies_levels_not_logs():
+    """The forecast must scale the counterfactual level, not shift its log.
+
+    This is a fourth invariant that fails silently. The composition is
+    counterfactual x (1 + effect), and the counterfactual is carried in log1p. Adding
+    the effect to the log instead of multiplying the level agrees to a fraction of a
+    percent at large counts, so a spot check on a busy cell would pass. It only breaks
+    where counts are small, and most of this panel has small counts.
+    """
+    import numpy as np
+    from eia_pipeline.nowcast.predict import compose
+
+    eff = {"0-500m": np.log(1.5)}          # a +50% near-field effect
+
+    # one quiet cell-hour and one busy one, both 300m out, both on a game night
+    cf = np.log1p(np.array([1.0, 100.0]))
+    out = compose(cf, np.array([300.0, 300.0]), np.array([True, True]), eff)
+    assert np.expm1(out) == pytest.approx([1.5, 150.0])
+
+    wrong = np.expm1(cf + np.log(1.5))     # the log-space version
+    assert wrong[1] == pytest.approx(150.5, abs=0.6)   # busy cell: looks fine
+    assert wrong[0] == pytest.approx(2.0)              # quiet cell: 2.0, not 1.5
+
+    # control rows are untouched whatever the effect says
+    ctl = compose(cf, np.array([300.0, 300.0]), np.array([False, False]), eff)
+    assert ctl == pytest.approx(cf)
+
+
+def test_composition_bands_match_the_estimator():
+    """A row must be multiplied by the effect measured on rows like it.
+
+    Bands are assigned first-match-wins on the upper bound in both the estimator and
+    here. If the two ever diverge, rows get an effect estimated on a different
+    population, and we would not see anything wrong in the output.
+    """
+    import numpy as np
+    import polars as pl
+    from eia_pipeline.nowcast.effects import _band_expr
+    from eia_pipeline.nowcast.predict import compose
+
+    d = np.array([0.0, 213.7, 500.0, 500.1, 1000.0, 2000.0, 4000.0, 9000.0])
+    eff = {"0-500m": np.log(2.0), "500m-1km": np.log(3.0), "1-2km": np.log(4.0),
+           "2-4km": np.log(5.0), ">4km": np.log(6.0)}
+
+    got = np.expm1(compose(np.log1p(np.ones(len(d))), d, np.ones(len(d), bool), eff))
+    want = (pl.DataFrame({"dist_venue_m": d})
+            .with_columns(_band_expr())["band"]
+            .map_elements(lambda b: float(np.exp(eff[b])), return_dtype=pl.Float64)
+            .to_numpy())
+    assert got == pytest.approx(want)
