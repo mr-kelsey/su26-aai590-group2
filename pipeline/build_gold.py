@@ -147,7 +147,7 @@ def build_game_effects(con):
                 SELECT g.date, g.ring_id, g.measure, c.value,
                        row_number() OVER (
                            PARTITION BY g.date, g.ring_id, g.measure
-                           ORDER BY abs(date_diff('day', g.date, c.date))) AS rk
+                           ORDER BY abs(date_diff('day', g.date, c.date)), c.date) AS rk
                 FROM games g
                 JOIN long_panel c
                   ON c.ring_id = g.ring_id AND c.measure = g.measure
@@ -200,9 +200,15 @@ def build_event_study(con):
         UNION ALL
         SELECT *, day_night AS slice FROM game_effects WHERE day_night IS NOT NULL
         UNION ALL
-        SELECT * EXCLUDE (t), 'att_t' || t AS slice FROM (
-            SELECT *, ntile(3) OVER (ORDER BY attendance) AS t
-            FROM game_effects WHERE attendance IS NOT NULL)
+        -- terciles are a per-GAME property: rank distinct game days, then fan
+        -- the label back out, so one game's ring/measure rows can never
+        -- straddle two terciles (ntile over the long table did exactly that,
+        -- nondeterministically, at tercile boundaries)
+        SELECT g.*, 'att_t' || t.t AS slice
+        FROM game_effects g
+        JOIN (SELECT date, ntile(3) OVER (ORDER BY attendance, date) AS t
+              FROM (SELECT DISTINCT date, attendance FROM game_effects
+                    WHERE attendance IS NOT NULL)) t USING (date)
     """)
     con.sql("""
         CREATE OR REPLACE TABLE event_study_ring AS
@@ -264,13 +270,20 @@ def build_occupancy_event_study(con, silver):
     visitor_hours is presence per hourly bucket, not a headcount (a fan at a
     3-hour game counts in ~4 buckets); see the silver README and the design
     doc. Estimator mirrors game_effects v0 exactly, one addition: controls
-    match on clock hour as well as day-of-week, so the counterfactual for
-    19:00 on a game Friday is 19:00 on the nearest clean Fridays.
+    are read at the treated hour's offset from the game date's midnight on
+    the nearest clean same-dow ANCHOR days, so the counterfactual for 19:00
+    on a game Friday is 19:00 on the nearest clean Fridays.
 
-    Two hour-grain traps handled here:
+    Three hour-grain traps handled here:
     - relative_hour is computed on TIMESTAMPS. A 19:00 first pitch + 8 hours
       is 03:00 the NEXT calendar day; integer hour math within a date would
       mislabel it.
+    - Controls must cross midnight the same way. Matching on clock hour
+      within a clean control DATE would baseline a night game's Sat-01:00
+      (+6) on Fri-01:00, which is Thursday night's tail, and would let a
+      previous evening's game egress contaminate control hours 0-3. The
+      anchor join instead reads 01:00 on the day AFTER a clean Friday.
+      Within-day hours select identical controls under both schemes.
     - Doubleheaders (n_games > 1) are excluded: two first pitches make
       relative_hour undefined. The day-grain code's MIN(first_pitch_hour) is
       harmless at day grain, wrong here.
@@ -323,7 +336,11 @@ def build_occupancy_event_study(con, silver):
     """)
 
     # Matched-control baseline per (game, ring, measure, relative_hour):
-    # nearest MATCH_K clean-control days, same dow, same clock hour.
+    # nearest MATCH_K clean-control ANCHOR days (same dow as the game date),
+    # each read at the treated hour's offset from the game date's midnight.
+    # Offsets past 24h land on the day AFTER the anchor, the night the anchor
+    # produced (docstring trap 2). Anchor cleanliness mirrors the treated
+    # side, where only the GAME date is conditioned on, not the next morning.
     con.sql(f"""
         CREATE OR REPLACE TABLE occ_baseline AS
         SELECT game_date, ring_id, measure, relative_hour,
@@ -335,14 +352,15 @@ def build_occupancy_event_study(con, silver):
                    row_number() OVER (
                        PARTITION BY g.game_date, g.ring_id, g.measure,
                                     g.relative_hour
-                       ORDER BY abs(date_diff('day', g.game_date, c.date)), c.date) AS rk
+                       ORDER BY abs(date_diff('day', g.game_date, a.date)), a.date) AS rk
             FROM occ_game_window g
+            JOIN panel_dates a
+              ON a.clean_control AND a.dow = g.dow
+             AND abs(date_diff('day', g.game_date, a.date))
+                 <= {MATCH_MAX_WINDOW_DAYS}
             JOIN occ_long c
               ON c.ring_id = g.ring_id AND c.measure = g.measure
-             AND c.hour = hour(g.ts) AND c.dow = g.dow
-             AND c.clean_control
-             AND abs(date_diff('day', g.game_date, c.date))
-                 <= {MATCH_MAX_WINDOW_DAYS}
+             AND c.ts = a.date::TIMESTAMP + (g.ts - g.game_date::TIMESTAMP)
              AND c.value IS NOT NULL)
         WHERE rk <= {MATCH_K}
         GROUP BY 1, 2, 3, 4
@@ -419,21 +437,21 @@ def build_occupancy_event_study(con, silver):
                        row_number() OVER (
                            PARTITION BY g.game_date, g.ring_id, g.measure,
                                         g.relative_hour
-                           ORDER BY abs(date_diff('day', g.game_date, c.date)), c.date) AS rk
+                           ORDER BY abs(date_diff('day', g.game_date, a.date)), a.date) AS rk
                 FROM occ_game_window g
+                JOIN panel_dates a
+                  ON a.clean_control AND a.dow = g.dow
+                 AND abs(date_diff('day', g.game_date, a.date))
+                     <= {MATCH_MAX_WINDOW_DAYS}
+                 AND a.date NOT IN (
+                     SELECT date FROM panel
+                     WHERE chase_event IS NOT NULL
+                        OR moscone_event IS NOT NULL)
                 JOIN occ_long c
                   ON c.ring_id = g.ring_id AND c.measure = g.measure
-                 AND c.hour = hour(g.ts) AND c.dow = g.dow
-                 AND c.clean_control
-                 AND abs(date_diff('day', g.game_date, c.date))
-                     <= {MATCH_MAX_WINDOW_DAYS}
+                 AND c.ts = a.date::TIMESTAMP + (g.ts - g.game_date::TIMESTAMP)
                  AND c.value IS NOT NULL
-                JOIN panel_dates pd ON pd.date = c.date
-                WHERE pd.date NOT IN (
-                    SELECT date FROM panel
-                    WHERE chase_event IS NOT NULL
-                       OR moscone_event IS NOT NULL)
-                  AND g.ring_id = 1 AND g.measure = 'visitor_hours')
+                WHERE g.ring_id = 1 AND g.measure = 'visitor_hours')
             WHERE rk <= {MATCH_K}
             GROUP BY 1, 2, 3, 4)
         SELECT s.relative_hour,
