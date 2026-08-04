@@ -32,9 +32,12 @@ with:
 
 ## pois.json: fetched at build, never committed
 
-The first deploy from this repo failed: the repo-root `.gitignore`'s blanket
-`data/` rule had silently kept `website/src/data/` out of PR #9. The fix
-split by license posture (this repo is PUBLIC):
+The first deploys from this repo failed: the repo-root `.gitignore`'s blanket
+Python-template rules (`data/`, `lib/`) had silently kept `website/src/data/`
+and `website/src/lib/` out of PR #9. The root .gitignore now keeps its hands
+off `website/` entirely (`!website/**`; website/.gitignore is the only
+authority there), and the data files split by license posture (this repo is
+PUBLIC):
 
 - `cells.json` + `giants-schedule.json`: committed (aggregated grid geometry
   and public MLB facts).

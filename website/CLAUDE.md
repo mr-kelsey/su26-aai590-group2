@@ -162,11 +162,14 @@ units (capstone lesson).
   Fix forward with a new commit; do NOT amend + force-push anything already pushed.
 - `main` is production. Feature work on branches; merge only after review of the branch's
   Vercel preview.
-- **Root .gitignore `data/` trap**: the repo-root .gitignore ignores every `data/`
-  directory, which silently swallowed `website/src/data/` in PR #9 (the first cutover
-  build failed with `Could not resolve "../../data/pois.json"`). Negation rules at the
-  bottom of the root .gitignore re-include the directory, minus pois.json. After adding
-  any nested data dir, sanity-check with `git check-ignore -v <path>`.
+- **Root .gitignore template trap**: the repo-root .gitignore is a Python template whose
+  blanket dir rules (`lib/`, `data/`) silently swallowed `website/src/lib/` AND
+  `website/src/data/` in PR #9; the first two Vercel builds from this repo died on the
+  missing files. The root file now ends with `!website/` + `!website/**`, making
+  website/.gitignore the ONLY authority under website/ (pois.json stays ignored there).
+  The working tree hides this class of bug, so before pushing website changes verify
+  from the git INDEX: `git checkout-index -a --prefix=/tmp/tree/ && cd /tmp/tree/website
+  && npm ci && npm run vercel-build && npm test`.
 - `scripts/build-cells.py` reads the capstone's local Advan extract
   (`~/Projects/personal/capstone/S3/advan_weekly_patterns/`); it is a dev-machine tool, not
   part of the site build. `cells.json` is committed so builds never touch the data lake.
