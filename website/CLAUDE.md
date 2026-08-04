@@ -106,16 +106,17 @@ units (capstone lesson).
 - **Source of truth: the capstone team repo** `mr-kelsey/su26-aai590-Group2`, directory
   `website/`. Make website changes THERE via the team's branch-and-PR flow (protected
   main, one reviewer).
-- **THIS repo (Jungleislander/venue-economics) is the Vercel deploy MIRROR.** It exists
-  because Vercel needs a git-connected repo and only the team repo's owner (mr-kelsey)
-  can install the Vercel GitHub App there. Do not develop here; sync from the team repo.
-- **Sync + deploy** after a website change merges to the team repo's main:
+- **End state (full migration, in progress)**: Vercel builds `website/` from the team
+  repo directly (Root Directory `website`, same project, domain untouched) and the
+  personal mirror repo is archived. The cutover checklist is
+  **`docs/VERCEL-CUTOVER.md`**; the blocking step is mr-kelsey installing the Vercel
+  GitHub App on the repo.
+- **Interim (until cutover)**: `Jungleislander/venue-economics` is the Vercel deploy
+  MIRROR. After a website change merges to the team repo's main, run
   `/Users/Steve3/Projects/hyperfocus/venue-economics/scripts/sync-from-team-repo.sh`
-  (rsyncs `website/` over this repo minus git/build/env files, commits with the source
-  SHA, pushes; the push deploys production).
-- If the team ever wants Vercel watching the team repo directly: mr-kelsey installs the
-  Vercel GitHub App on `su26-aai590-Group2`, import it in Vercel with Root Directory
-  `website`, move the domain, then archive this mirror.
+  (rsyncs `website/` over the mirror minus git/build/env files, commits with the source
+  SHA, pushes; the push deploys production). Delete the script and this interim note
+  after cutover.
 
 ## Deploy & domain
 
