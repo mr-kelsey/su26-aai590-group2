@@ -30,6 +30,9 @@ model = [
 aws = [
     "sagemaker<3",         # MUST be <3 — v3 restructured the package and breaks imports
 ]
+charts = [
+    "matplotlib>=3.8",     # figure rendering for docs/reports/figures (PNG only, no GUI)
+]
 dev = [
     "ruff>=0.4",
     "pytest>=8.0",
