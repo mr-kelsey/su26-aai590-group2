@@ -219,6 +219,12 @@ __marimo__/
 
 # user defined
 data/
+# ...but the website's committed bundles live under website/src/data (the
+# blanket data/ rule above silently swallowed them in PR #9). Re-include the
+# directory, keep the Advan-derived index out: it is licensed data, fetched
+# at build time by website/scripts/fetch-pois.mjs.
+!website/src/data/
+website/src/data/pois.json
 
 # --- eia-nowcast import ---
 # macOS finder droppings

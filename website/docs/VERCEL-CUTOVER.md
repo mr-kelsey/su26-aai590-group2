@@ -1,110 +1,65 @@
-# Vercel cutover: deploy the website from THIS repo
+# Vercel cutover: DONE 2026-08-04. This is the record.
 
-Goal: Vercel builds `website/` from `mr-kelsey/su26-aai590-Group2` directly, the
-domain stays put, and the old personal mirror repo retires. Until every step
-below is done, production keeps deploying from the mirror
-(`Jungleislander/venue-economics`) via `scripts/sync-from-team-repo.sh`.
+Vercel now builds `website/` from this repo directly. The domain stayed put,
+and the old personal mirror (`Jungleislander/venue-economics`) is retired.
 
-## STATUS 2026-08-04: blocked by a Vercel platform rule. Team decision needed.
+## How it ended up working
 
-Attempted 2026-08-04, after Jonno installed the GitHub App (step 1, done).
-The `mr-kelsey` namespace never appears in the repo picker of the Vercel
-project, and Vercel's docs say why
+The first attempt hit a Vercel platform rule
 (<https://vercel.com/docs/git/vercel-for-github>, "Personal account
-repositories"):
+repositories"): only the OWNER of a personal-account repo can connect it to a
+Vercel project; a collaborator cannot, and the repo then lived under
+`mr-kelsey`. The fix: mr-kelsey created the **`venue-economics` GitHub org**
+(2026-08-04), transferred this repo into it, installed the Vercel GitHub App
+on the org, and invited the team. Org repos are connectable by any org member
+with access, so the original dashboard cutover applied unchanged. Old
+`mr-kelsey/su26-aai590-Group2` URLs and git remotes redirect; re-point clones
+with:
+`git remote set-url origin https://github.com/venue-economics/su26-aai590-group2.git`
 
-> To import or connect a GitHub repository owned by a personal account, you
-> must be the repository Owner. [...] A Collaborator on a personal repository
-> cannot create new Vercel projects from that repository or connect it to
-> existing projects.
+## The Vercel project state (project `venue-economics`, team `steves-projects-fdb198c2`)
 
-`mr-kelsey` is a personal GitHub account. The Vercel project
-(`venue-economics`, with the domain attached) lives under Steve's Vercel
-account, and Steve's GitHub login is a collaborator on this repo, not its
-owner. So the direct connect is impossible regardless of the App install.
-The App install was still worth doing: both options below use it.
+1. Git: connected to `venue-economics/su26-aai590-group2`.
+2. Build and Deployment -> Root Directory = `website`.
+3. Root Directory -> "Skip deployments when there are no changes to the root
+   directory or its dependencies" = Enabled. (Native replacement for the
+   custom `git diff --quiet HEAD^ HEAD -- .` ignored-build-step command an
+   earlier draft of this doc prescribed.)
+4. Production Branch: `main`. Merges to main deploy production; branch pushes
+   build previews.
+5. Build command: `npm run vercel-build` (Vercel auto-prefers it over
+   `build`): fetches `src/data/pois.json` from S3, then `astro build`.
 
-The interim mirror flow keeps working in the meantime; nothing is broken.
+## pois.json: fetched at build, never committed
 
-## Options (approving one of these in review = picking it)
+The first deploy from this repo failed: the repo-root `.gitignore`'s blanket
+`data/` rule had silently kept `website/src/data/` out of PR #9. The fix
+split by license posture (this repo is PUBLIC):
 
-### Option A (recommended): move the repo into a GitHub organization
+- `cells.json` + `giants-schedule.json`: committed (aggregated grid geometry
+  and public MLB facts).
+- `pois.json` (13,966 Advan-derived POIs, Dewey student license): NOT
+  committed. It lives at `s3://aai-590-group2-capstone/website-data/pois.json`
+  and `scripts/fetch-pois.mjs` downloads it during the build, authenticated by
+  the POIS_* env vars in Vercel (IAM user `vercel-website-build`,
+  `s3:GetObject` on `website-data/*` only). After regenerating the index,
+  re-upload it to that key.
 
-Vercel lets org MEMBERS with repo access connect org repos. One-time, about
-10 minutes, and afterwards the original step 2 works verbatim:
+## Mirror retirement
 
-1. Jonno creates a free GitHub org (e.g. `onegiantleap`) and transfers
-   `su26-aai590-Group2` into it (repo Settings -> Transfer ownership).
-   GitHub redirects the old URLs and existing clones keep working.
-2. Jonno adds Steve and Luke as org members with access to the repo
-   (outside collaborators are NOT enough per Vercel's docs).
-3. Jonno installs the Vercel GitHub App on the org, selecting the repo.
-4. Steve runs step 2 below unchanged.
+1. The GitHub repo `Jungleislander/venue-economics` is archived (read-only,
+   history browsable), with a final commit pointing here.
+2. `scripts/sync-from-team-repo.sh` is deleted from this repo; the interim
+   mirror flow note in `website/CLAUDE.md` is replaced by the section
+   "Source of truth and deploy flow".
+3. The local checkout `~/Projects/hyperfocus/venue-economics` on Steve's
+   machine is a frozen archive; the working copy is this repo.
 
-Check first: if the course requires the repo to stay under `mr-kelsey`,
-use Option B instead.
+## Env vars
 
-### Option B: deploy from GitHub Actions in this repo (no repo move)
-
-Vercel's documented fallback (same docs page, "Using GitHub Actions"):
-workflows in this repo run `vercel pull` / `vercel build` / `vercel deploy
---prebuilt` against Steve's Vercel project, authenticated by a token.
-
-1. Steve creates a Vercel access token for his account.
-2. Jonno adds it to this repo as the `VERCEL_TOKEN` Actions secret (repo
-   Settings -> Secrets; only the owner can).
-3. Add two workflows under `.github/workflows/`: preview deploys on branch
-   pushes touching `website/`, production deploy on pushes to `main`.
-
-Trade-offs: token handling (the token can deploy Steve's projects), no
-native PR comments or commit statuses from Vercel, and we maintain the
-workflows ourselves.
-
-### Not viable
-
-Moving the Vercel project or domain under Jonno's Vercel account, or a paid
-shared Vercel team, would also work but has the most churn (domain and
-project settings move). Listed only for completeness.
-
-## Step 1: Jonno (repo owner), one-time GitHub App install. DONE 2026-08-04.
-
-1. Open https://github.com/apps/vercel and click Configure.
-2. Pick the `mr-kelsey` account.
-3. Choose "Only select repositories" and select `su26-aai590-Group2`.
-4. Save. Nothing else; no Vercel account needed.
-
-## Step 2: Steve, in the Vercel dashboard (project `venue-economics`)
-
-Works only after Option A (or is replaced by workflows under Option B).
-
-1. Settings -> Git -> Disconnect the current repo
-   (`Jungleislander/venue-economics`), then Connect Git Repository ->
-   the org's `su26-aai590-Group2`.
-2. Settings -> Build and Deployment -> Root Directory = `website`.
-3. Same page -> Ignored Build Step -> Custom:
-   `git diff --quiet HEAD^ HEAD -- .`
-   (skips builds for capstone commits that do not touch `website/`; the
-   command runs inside the Root Directory).
-4. Production Branch stays `main`.
-5. Trigger a deploy (Deploys -> Redeploy, or merge any website change) and
-   verify https://www.venue-economics.com serves it.
-
-## Step 3: retire the mirror
-
-1. Archive the GitHub repo `Jungleislander/venue-economics` (Settings ->
-   Archive). Its git history stays browsable.
-2. Delete `website/scripts/sync-from-team-repo.sh` from this repo and remove
-   the interim-flow note in `website/CLAUDE.md`.
-3. Local cleanup on Steve's machine: `~/Projects/hyperfocus/venue-economics`
-   can be deleted or kept as an archive; the working copy is this repo.
-
-## Notes
-
-- Env vars: none are required while the model runs in simulated preview. When
-  the live endpoint ships, set `AWS_REGION` / `AWS_ACCESS_KEY_ID` /
-  `AWS_SECRET_ACCESS_KEY` / `SAGEMAKER_ENDPOINT_ORACLE` in the Vercel project
+- Build: POIS_* (see `.env.example`).
+- Runtime: none while the model runs in simulated preview. When the live
+  endpoint ships, set `AWS_REGION` / `AWS_ACCESS_KEY_ID` /
+  `AWS_SECRET_ACCESS_KEY` / `SAGEMAKER_ENDPOINT_ORACLE`
   (see docs/PLUG-IN-ENDPOINT.md). The retired `SAGEMAKER_ENDPOINT` var can be
   deleted.
-- After cutover, every team-repo branch that touches `website/` gets a Vercel
-  preview deployment automatically; website changes follow the normal
-  branch-and-PR flow. (Under Option B this comes from the workflows instead.)
