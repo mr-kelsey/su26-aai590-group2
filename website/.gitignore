@@ -1,0 +1,27 @@
+# dependencies
+node_modules/
+
+# build output
+dist/
+.astro/
+
+# vercel
+.vercel/
+
+# brainstorm scratch (visual companion mockups)
+.superpowers/
+
+# os / editor / env
+.DS_Store
+*.log
+.env
+.env.*
+!.env.example
+
+# local verification artifacts (screenshots, playwright)
+.playwright-mcp/
+/venue-*.png
+
+# data-prep scratch (gold-table parquet download — see scripts/build-county-context.py)
+.tmp_gold/
+.venv-dataprep/

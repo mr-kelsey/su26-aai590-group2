@@ -1,0 +1,83 @@
+@import "tailwindcss";
+
+/* ============================================
+   Venue Economics: Design System
+   Isos design language: Poppins, light surfaces,
+   ink headings, brand-red accents.
+   Tokens sourced from the Isos Technology Design System
+   (colors_and_type.css) and isostech-website/BRANDING.md.
+   ============================================ */
+
+/* Poppins, self-hosted (OFL). Light 300 is the display weight. */
+@font-face {
+  font-family: 'Poppins';
+  src: url('/fonts/Poppins-Light.ttf') format('truetype');
+  font-weight: 300;
+  font-display: swap;
+  font-style: normal;
+}
+@font-face {
+  font-family: 'Poppins';
+  src: url('/fonts/Poppins-Regular.ttf') format('truetype');
+  font-weight: 400;
+  font-display: swap;
+  font-style: normal;
+}
+@font-face {
+  font-family: 'Poppins';
+  src: url('/fonts/Poppins-Medium.ttf') format('truetype');
+  font-weight: 500;
+  font-display: swap;
+  font-style: normal;
+}
+@font-face {
+  font-family: 'Poppins';
+  src: url('/fonts/Poppins-SemiBold.ttf') format('truetype');
+  font-weight: 600;
+  font-display: swap;
+  font-style: normal;
+}
+
+/* --- Theme --- */
+@theme {
+  /* Isos neutrals (cool blue-grays) */
+  --color-bg: #f4f7ff;        /* porcelain page tint */
+  --color-surface: #ffffff;   /* cards, form fields */
+  --color-fg: #343941;        /* ink: headings, primary text */
+  --color-muted: #47535d;     /* slate: secondary text */
+  --color-faint: #8b93a5;     /* cool gray: captions, hints */
+  --color-mist: #dde7ed;      /* borders, dividers, soft fills */
+
+  /* Isos brand reds */
+  --color-red: #b72025;
+  --color-red-dark: #77161e;
+  --color-red-bright: #ed4037;
+  --color-red-pink: #f9a19e;
+
+  --font-sans: 'Poppins', system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+
+  /* Soft, cool-tinted elevation (Isos shadow scale) */
+  --shadow-card: 0 4px 35px rgba(68, 83, 94, 0.15);
+  --shadow-soft: 0 2px 12px rgba(52, 57, 65, 0.06);
+}
+
+/* --- Base --- */
+html {
+  -webkit-text-size-adjust: 100%;
+  scroll-behavior: smooth;
+}
+
+body {
+  font-family: var(--font-sans);
+  background-color: var(--color-bg);
+  color: var(--color-fg);
+  letter-spacing: 0.2px;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+::selection {
+  background-color: var(--color-red);
+  color: #ffffff;
+}
