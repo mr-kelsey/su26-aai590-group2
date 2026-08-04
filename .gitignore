@@ -226,3 +226,11 @@ data/
 # one-time S3 upload staging (derived parquet; lives in S3, not git)
 bart_seed_upload/
 bart_seed_upload.zip
+
+# The website/ app is not pipeline output: none of the template rules above
+# (lib/, data/, models/, ...) may reach into it. Those blanket rules silently
+# kept src/lib and src/data out of PR #9 and broke the Vercel builds.
+# website/.gitignore is the only authority for what stays out of the website
+# tree (node_modules, dist, the licensed Advan-derived pois.json, ...).
+!website/
+!website/**

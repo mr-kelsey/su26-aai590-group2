@@ -25,3 +25,7 @@ dist/
 # data-prep scratch (gold-table parquet download — see scripts/build-county-context.py)
 .tmp_gold/
 .venv-dataprep/
+
+# licensed data: Advan-derived POI index, fetched at build time from S3 by
+# scripts/fetch-pois.mjs; never commit it to this public repo
+src/data/pois.json
