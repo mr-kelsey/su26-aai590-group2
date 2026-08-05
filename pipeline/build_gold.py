@@ -89,11 +89,118 @@ def log(msg):
     print(f"[build_gold] {msg}", flush=True)
 
 
+# --------------------------------------------------------------- QA vocabulary
+#
+# Five kinds, because "PASS" used to stand for five different things and a
+# swallowed exception was indistinguishable from a real pass in the manifest.
+#
+#   gate         integrity/shape/units/coverage. HARD: aborts the build.
+#   expect       a claim about what the data SHOWS. Soft: recorded, never aborts.
+#   crosscheck   agreement with an external artifact. Soft.
+#   skipped      the check did not run, and why. Never counts as agreement.
+#   note         provenance only, no verdict.
+#
+# The gate/expect split is the important one. Gating on a finding means a null
+# or contrary result crashes the build, and any estimator change that shrinks
+# the effect (better controls, a wider window, a fixed bootstrap) presents as
+# broken plumbing rather than as a result. Gate the plumbing; report the finding.
+
 def gate(name, ok, detail):
-    QA[name] = {"ok": bool(ok), "detail": detail}
-    log(f"QA {'PASS' if ok else 'FAIL'} {name}: {detail}")
+    """Integrity gate. Aborts the build on failure.
+
+    For statements about whether the data was read and assembled correctly:
+    row counts, join shapes, units, coverage floors, leakage checks. A claim
+    about what the data shows belongs in expect(), not here.
+    """
+    QA[name] = {"kind": "gate", "ok": bool(ok), "detail": detail}
+    log(f"GATE {'PASS' if ok else 'FAIL'} {name}: {detail}")
     if not ok:
         sys.exit(f"QA gate failed: {name}: {detail}")
+
+
+def expect(name, ok, detail):
+    """Expectation about a RESULT. Recorded and logged; never aborts.
+
+    These encode what we expect to see if the hypothesis holds (core-ring lift
+    positive, decay monotone in distance, placebo ring null). An unmet
+    expectation is a finding to report and discuss with the team, so the build
+    still writes every table and the manifest carries the verdict.
+    """
+    QA[name] = {"kind": "expectation", "ok": bool(ok), "detail": detail}
+    log(f"EXPECT {'MET' if ok else 'NOT MET'} {name}: {detail}")
+    if not ok:
+        log(f"WARNING {name} not met. Tables still written; read the manifest "
+            f"before quoting this build.")
+
+
+def crosscheck(name, ok, detail):
+    """Agreement with an artifact this build does not own. Never aborts."""
+    QA[name] = {"kind": "crosscheck", "ok": bool(ok), "detail": detail}
+    log(f"CROSSCHECK {'AGREES' if ok else 'DISAGREES'} {name}: {detail}")
+
+
+def skipped(name, why):
+    """The check did not run. Recorded ok=False so it can never read as a pass."""
+    QA[name] = {"kind": "skipped", "ok": False, "detail": f"did not run: {why}"}
+    log(f"SKIPPED {name}: {why}")
+
+
+def note(name, detail):
+    """Provenance only: no pass/fail verdict is implied."""
+    QA[name] = {"kind": "note", "detail": detail}
+    log(f"NOTE {name}: {detail}")
+
+
+_VERDICT = {
+    ("gate", True): "PASS", ("gate", False): "FAIL",
+    ("expectation", True): "MET", ("expectation", False): "NOT MET",
+    ("crosscheck", True): "AGREES", ("crosscheck", False): "DISAGREES",
+    ("skipped", False): "DID NOT RUN", ("skipped", True): "DID NOT RUN",
+}
+
+_QA_SECTIONS = [
+    ("gate", "Integrity gates (a failure aborts the build)"),
+    ("expectation", "Result expectations (recorded; they never abort the build)"),
+    ("crosscheck", "External crosschecks"),
+    ("skipped", "Checks that did not run"),
+    ("note", "Notes (no verdict)"),
+]
+
+
+def qa_markdown(qa):
+    """Render the QA log by kind, so each entry states what it actually means."""
+    out = []
+    for kind, heading in _QA_SECTIONS:
+        rows = [(k, v) for k, v in qa.items() if v.get("kind", "gate") == kind]
+        if not rows:
+            continue
+        out.append(f"**{heading}**\n")
+        for k, v in rows:
+            verdict = _VERDICT.get((kind, bool(v.get("ok"))))
+            # A few details are structured (decay_fits): JSON reads in markdown,
+            # a Python dict repr does not.
+            detail = v["detail"]
+            if not isinstance(detail, str):
+                detail = json.dumps(detail, default=str)
+            out.append(f"- {verdict + ' ' if verdict else ''}`{k}`: {detail}")
+        out.append("")
+    for kind, one, many, tail in (
+        ("expectation", "result expectation was NOT MET",
+         "result expectations were NOT MET",
+         "Every table below was still written. Do not quote this build without "
+         "reading why."),
+        ("skipped", "check DID NOT RUN", "checks DID NOT RUN",
+         "That coverage is UNVERIFIED in this build."),
+        ("crosscheck", "crosscheck DISAGREES", "crosschecks DISAGREE",
+         "Reconcile before quoting."),
+    ):
+        bad = [k for k, v in qa.items()
+               if v.get("kind") == kind and not v.get("ok")]
+        if bad:
+            out.append(f"> {len(bad)} {one if len(bad) == 1 else many}: "
+                       f"{', '.join(f'`{k}`' for k in bad)}. {tail}")
+            out.append("")
+    return "\n".join(out).rstrip()
 
 
 def git_sha():
@@ -188,8 +295,8 @@ def build_game_effects(con):
     log(f"game_effects: {n} rows, ring-1 food mean lift = {ring1_food}")
     gate("game_effects_coverage", thin == 0,
          f"{thin} game-ring-measure cells with < {MIN_CONTROLS} matched controls")
-    gate("core_ring_positive_lift", ring1_food and ring1_food > 0,
-         f"ring-1 visits_food mean lift = {ring1_food}")
+    expect("core_ring_positive_lift", ring1_food is not None and ring1_food > 0,
+           f"ring-1 visits_food mean lift = {ring1_food}")
 
 
 def build_event_study(con):
@@ -226,9 +333,17 @@ def build_event_study(con):
         SELECT mean_lift, se_lift, mean_lift_pct FROM event_study_ring
         WHERE ring_id = 1 AND measure = 'visits_food' AND slice = 'all'
     """).fetchone()
-    tstat = core[0] / core[1] if core and core[1] else 0
-    gate("core_effect_significant", tstat > 4,
-         f"ring-1 visits_food: {core[0]} +/- {core[1]} ({core[2]}%), t = {tstat:.1f}")
+    # Guarded rather than indexed blind: now that an unmet expectation no longer
+    # exits, a missing row must report itself instead of raising a TypeError two
+    # lines later and taking the whole build down anyway.
+    if core is None:
+        expect("core_effect_significant", False,
+               "no ring-1 visits_food slice=all row in event_study_ring")
+    else:
+        tstat = core[0] / core[1] if core[1] else 0.0
+        expect("core_effect_significant", tstat > 4,
+               f"ring-1 visits_food: {core[0]} +/- {core[1]} ({core[2]}%), "
+               f"t = {tstat:.1f}")
 
 
 def build_distance_decay(con):
@@ -254,14 +369,15 @@ def build_distance_decay(con):
         """).fetchone()
         fits[m] = {"log_slope_per_km": row[0], "log_intercept": row[1],
                    "rings_used": row[2]}
-    QA["decay_fits"] = {"ok": True, "detail": fits}
+    note("decay_fits", fits)
     inner, outer = con.sql("""
         SELECT MAX(mean_lift_pct) FILTER (ring_id = 1),
                MAX(mean_lift_pct) FILTER (ring_id = 5)
         FROM distance_decay WHERE measure = 'visits_food'
     """).fetchone()
-    gate("decay_direction", inner is not None and outer is not None and inner > outer,
-         f"visits_food pct lift: ring 1 = {inner}, ring 5 = {outer}")
+    expect("decay_direction",
+           inner is not None and outer is not None and inner > outer,
+           f"visits_food pct lift: ring 1 = {inner}, ring 5 = {outer}")
 
 
 def build_occupancy_event_study(con, silver):
@@ -305,9 +421,7 @@ def build_occupancy_event_study(con, silver):
     n_dh = con.sql("""
         SELECT COUNT(DISTINCT date) FROM occ_hour
         WHERE giants_home AND n_games > 1""").fetchone()[0]
-    QA["occupancy_es_doubleheaders_excluded"] = {
-        "ok": True, "detail": f"{n_dh} doubleheader days excluded"}
-    log(f"occupancy event study: excluding {n_dh} doubleheader days")
+    note("occupancy_es_doubleheaders_excluded", f"{n_dh} doubleheader days excluded")
 
     measure_rows = " UNION ALL ".join(
         f"SELECT ring_id, ring, date, hour, ts, '{m}' AS measure, "
@@ -404,20 +518,26 @@ def build_occupancy_event_study(con, silver):
     gate("occupancy_es_coverage", thin == 0,
          f"{thin} game-ring-measure-hour cells with < {MIN_CONTROLS} controls")
 
-    peak_rel, peak_eff = con.sql("""
+    peak = con.sql("""
         SELECT relative_hour, ROUND(effect, 1) FROM occupancy_event_study
         WHERE ring_id = 1 AND measure = 'visitor_hours' AND slice = 'all'
         ORDER BY effect DESC LIMIT 1""").fetchone()
-    gate("occupancy_es_peak_at_zero", -1 <= peak_rel <= 2,
-         f"ring-1 visitor_hours peak effect {peak_eff} at relative_hour "
-         f"{peak_rel}, want in [-1, +2]")
+    if peak is None:
+        expect("occupancy_es_peak_at_zero", False,
+               "no ring-1 visitor_hours slice=all rows in occupancy_event_study")
+    else:
+        peak_rel, peak_eff = peak
+        expect("occupancy_es_peak_at_zero", -1 <= peak_rel <= 2,
+               f"ring-1 visitor_hours peak effect {peak_eff} at relative_hour "
+               f"{peak_rel}, want in [-1, +2]")
 
     outer_t = con.sql("""
         SELECT AVG(effect / NULLIF(se, 0)) FROM occupancy_event_study
         WHERE ring_id = 5 AND measure = 'visitor_hours' AND slice = 'all'
     """).fetchone()[0]
-    gate("occupancy_es_outer_null", outer_t is not None and outer_t < 2.0,
-         f"ring-5 mean t = {outer_t:.2f}, placebo ring must stay null (< 2)")
+    outer_txt = "no rows" if outer_t is None else f"{outer_t:.2f}"
+    expect("occupancy_es_outer_null", outer_t is not None and outer_t < 2.0,
+           f"ring-5 mean t = {outer_txt}, placebo ring expected null (< 2)")
     n = con.sql("SELECT COUNT(*) FROM occupancy_event_study").fetchone()[0]
     log(f"occupancy_event_study: {n} rows")
 
@@ -471,20 +591,14 @@ def build_occupancy_event_study(con, silver):
     peak_strict = strict_d.get(peak_rel2)
     if peak_strict is not None and peak_default:
         delta_pct = 100.0 * (peak_strict - peak_default) / peak_default
-        QA["control_pool_sensitivity"] = {
-            "ok": True,
-            "detail": (f"ring-1 peak effect {peak_default:.0f} (default pool) vs "
-                       f"{peak_strict:.0f} (strict, chase/moscone excluded): "
-                       f"{delta_pct:+.1f}%"
-                       + ("; over 10%, discuss the control pool with the team"
-                          if abs(delta_pct) > 10 else "")),
-        }
-        log(f"control-pool sensitivity: peak {peak_default:.0f} -> "
-            f"{peak_strict:.0f} strict ({delta_pct:+.1f}%)")
+        note("control_pool_sensitivity",
+             f"ring-1 peak effect {peak_default:.0f} (default pool) vs "
+             f"{peak_strict:.0f} (strict, chase/moscone excluded): {delta_pct:+.1f}%"
+             + ("; over 10%, discuss the control pool with the team"
+                if abs(delta_pct) > 10 else ""))
     else:
-        QA["control_pool_sensitivity"] = {
-            "ok": True, "detail": "strict pool too thin at the peak hour to compare"}
-        log("control-pool sensitivity: strict pool too thin at the peak hour")
+        skipped("control_pool_sensitivity",
+                "strict pool too thin at the peak hour to compare")
 
 
 def build_dollars(con):
@@ -501,9 +615,8 @@ def build_dollars(con):
       over rings, with uncertainty from both the lift SE and the $/visit SE.
     Blocked on: Luke's disaggregation code covering 2022-2026 (his current
     output is 2024 only)."""
-    log("dollars: STUB, skipped (see docstring; blocked on multi-year "
-        "disaggregation from Luke's pipeline)")
-    QA["dollars_built"] = {"ok": True, "detail": "stub: not yet implemented"}
+    note("dollars_built", "stub: not yet implemented (blocked on multi-year "
+                          "disaggregation from Luke's pipeline)")
 
 
 def build_gnn_tables(con, silver, bronze_advan):
@@ -753,17 +866,25 @@ def build_impact_model(con):
     Note for the modeling: at ring 1, daily lift is nearly flat in attendance
     (corr ~0.13); check whether attendance matters more at outer rings
     before committing to it as the headline input."""
-    log("impact_model: STUB, skipped (GNN contract in gnn_* tables; "
-        "training is downstream)")
-    QA["impact_model_built"] = {"ok": True, "detail": "stub: GNN data contract "
-                                "built by build_gnn_tables; training downstream"}
+    note("impact_model_built", "stub: GNN data contract built by "
+                               "build_gnn_tables; training downstream")
+
+
+MIN_CROSSCHECK_CORR = 0.90  # ring 1 (0-250m) is a subset of his 0-300m POI set
 
 
 def crosscheck_luke(con, residuals):
-    """Report-only: our ring-1 visits_food lift vs Luke's (v - exp) gap on
-    the same game days. His exp is a same-dow control mean with a different
-    window, and since the 2026-07-18 metric re-ring our ring 1 (0-250m) is a
-    subset of his 0-300m POI set, so we expect high corr, not equality."""
+    """Our ring-1 visits_food lift vs Luke's (v - exp) gap on the same game days.
+
+    His exp is a same-dow control mean with a different window, and since the
+    2026-07-18 metric re-ring our ring 1 (0-250m) is a subset of his 0-300m POI
+    set, so we expect high corr, not equality.
+
+    Never aborts the build: `residuals` is an artifact of the other pipeline and
+    may legitimately be unreachable. But it is never recorded as agreement it did
+    not establish, so a moved prefix cannot quietly retire the only check that
+    ties the two pipelines together.
+    """
     try:
         corr, n = con.sql(f"""
             SELECT corr(g.lift, l.v - l.exp), COUNT(*)
@@ -771,12 +892,16 @@ def crosscheck_luke(con, residuals):
             JOIN '{residuals}' l ON l.date = g.date
             WHERE g.ring_id = 1 AND g.measure = 'visits_food'
         """).fetchone()
-        QA["crosscheck_luke_gap"] = {"ok": True,
-                                     "detail": f"n={n}, corr(our lift, his v-exp)={corr:.4f}"}
-        log(f"cross-check vs Luke's gap: n={n}, corr={corr:.4f}")
     except Exception as e:
-        QA["crosscheck_luke_gap"] = {"ok": True, "detail": f"skipped: {e}"}
-        log(f"cross-check vs Luke skipped: {e}")
+        skipped("crosscheck_luke_gap", f"{residuals} unreadable: {e}")
+        return
+    if not n or corr is None:
+        skipped("crosscheck_luke_gap",
+                f"no overlapping game days with {residuals} (n={n})")
+        return
+    crosscheck("crosscheck_luke_gap", corr >= MIN_CROSSCHECK_CORR,
+               f"n={n}, corr(our lift, his v-exp)={corr:.4f}, "
+               f"want >= {MIN_CROSSCHECK_CORR}")
 
 
 TABLES = ["game_effects", "event_study_ring", "distance_decay",
@@ -813,10 +938,24 @@ def write_outputs(con, out, silver, started):
     log(f"wrote {len(TABLES)} tables + build_manifest.json + README.md to {out}")
 
 
+def qa_headline(qa):
+    """One line for the top of the README: did anything need a human to look?"""
+    unmet = [k for k, v in qa.items()
+             if v.get("kind") in ("expectation", "crosscheck", "skipped")
+             and not v.get("ok")]
+    if not unmet:
+        return ("All integrity gates passed, every result expectation was met, and "
+                "every crosscheck ran and agreed.")
+    n = len(unmet)
+    return (f"All integrity gates passed (the build would have aborted otherwise), "
+            f"but {n} soft check{'' if n == 1 else 's'} "
+            f"{'wants' if n == 1 else 'want'} a human: "
+            f"{', '.join(f'`{k}`' for k in unmet)}. See the QA log below.")
+
+
 def readme_text(m):
     rows = "\n".join(f"| `{t}.parquet` | {n:,} |" for t, n in m["tables"].items())
-    qa = "\n".join(f"- {'PASS' if v['ok'] else 'FAIL'} `{k}`: {v['detail']}"
-                   for k, v in m["qa"].items())
+    qa = qa_markdown(m["qa"])
     return f"""# gold/ - model-ready answers (SCAFFOLD build)
 
 DERIVED. Built only by `pipeline/build_gold.py` from silver; never
@@ -851,7 +990,18 @@ Stubs (documented in the script, not yet built): {', '.join(m['stubs'])}.
 - git_sha: {m['git_sha']}
 - silver: {m['silver']}
 
-QA:
+{qa_headline(m['qa'])}
+
+## QA log
+
+Two classes, deliberately separated. **Integrity gates** are claims about whether
+the data was read and assembled correctly, and a failure aborts the build.
+**Result expectations** are claims about what the data shows; they are recorded
+and never abort, because gating on a finding means a null or contrary result
+crashes the build and any estimator change that shrinks the effect looks like
+broken plumbing. A check that DID NOT RUN is listed as such and never counts as
+agreement.
+
 {qa}
 """
 
