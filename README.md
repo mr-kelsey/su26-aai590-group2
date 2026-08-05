@@ -1,32 +1,42 @@
-# Capstone Project for USD Applied AI Master's Program
-Economic impact analysis as continued on from AAI-540.  Same problem; new approach, new models.
+# Group 2 capstone project for AAI-590
 
-## Developer Instructions
-The `Main` branch is protected.  Please create a branch and make a PR to merge your branch into Main.  Each PR will need at least one (1) reviewer to sign off before it can be merged.
+This project is a part of the AAI-590 course in the Applied Artificial Intelligence Program at the University of San Diego (USD).
 
-Basic Rules for branch names:
-* Lowercase and Hyphen-separated: 
-    * Stick to lowercase for branch names and use hyphens to separate words. For instance, feature/new-login or bugfix/header-styling.
-* Alphanumeric Characters: 
-    * Use only alphanumeric characters (a-z, A-Z, 0–9) and hyphens. Avoid punctuation, spaces, underscores, or any non-alphanumeric character.
-* No Continuous Hyphens: 
-    * Do not use continuous hyphens. feature--new-login can be confusing and hard to read.
-* No Trailing Hyphens: 
-    * Do not end your branch name with a hyphen. For example, feature-new-login- is not a good practice.
-* Descriptive: 
-    * The name should be descriptive and concise, ideally reflecting the work done on the branch.
+#### Installation
+You should add instructions on how this project is to be used, installed, run, edited in others’ machine.
+ 
+#### Project Intro/Objective
 
-Branch Prefixes
+The main purpose of this project is ________. Describe the goals of the project and potential impacts. Mention the needs/applications of your project clearly. Limit to one/two short paragraph(s). 
 
-Using prefixes in branch names helps to quickly identify the purpose of the branches. Here are some common types of branches with their corresponding prefixes:
+#### Partner(s)/Contributor(s)
 
-* Feature Branches:
-    * These branches are used for developing new features. Use the prefix feature/. For instance, feature/login-system.
-* Bugfix Branches:
-    * These branches are used to fix bugs in the code. Use the prefix bugfix/. For example, bugfix/header-styling.
-* Hotfix Branches:
-    * These branches are made directly from the production branch to fix critical bugs in the production environment. Use the prefix hotfix/. For instance, hotfix/critical-security-issue.
-* Release Branches:
-    * These branches are used to prepare for a new production release. They allow for last-minute dotting of i’s and crossing t’s. Use the prefix release/. For example, release/v1.0.1.
-* Documentation Branches:
-    * These branches are used to write, update, or fix documentation eg. the README.md file. Use the prefix docs/. For instance, docs/api-endpoints.
+* [Stephen Farmer](https://github.com/Jungleislander)
+* [Johnathan Kelsey](https://github.com/mr-kelsey)
+* [Lucas Young](https://github.com/Giant-Leap-ai)
+
+#### Methods Used
+* Inferential Statistics
+* Machine Learning
+* Deep Learning
+* Data Visualization
+* Cloud Computing 
+* Graph Neural Networks
+* Temporal Dissaggregation
+
+#### Technologies
+* Python
+* PyTorch
+* AWS
+* DuckDB
+* JavaScript
+* Claude Code
+
+#### Project Description
+Discuss the details of project overview. Description your selected dataset, such as data source, number of variables, size of dataset, etc. Include data dictionary, if available.  Provide questions and hypothesis that you are exploring. What specific data analysis, visualization, and modeling work are you using to solve the problem? What roadblocks and challenges are you facing? etc. 
+
+#### License
+GNU GENERAL PUBLIC LICENSE Version 3
+
+#### Acknowledgments
+You can mention and thank your professors and those who technically helped you during the project. 
