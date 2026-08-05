@@ -114,11 +114,92 @@ def log(msg):
     print(f"[build_silver] {msg}", flush=True)
 
 
+# --------------------------------------------------------------- QA vocabulary
+#
+# Kept deliberately identical to build_gold.py's block rather than factored into
+# a shared module: both scripts are standalone by design (run by path, "duckdb
+# only", copy-one-file deployable) and already duplicate log/gate/git_sha/
+# write_outputs/readme_text for the same reason.
+#
+# Every silver check is an INTEGRITY gate and stays hard: parse, array length,
+# Monday alignment, panel shape, unit conversions, coverage floors, and the
+# local-vs-UTC hour reading. Silver makes no claim about what the data shows, so
+# there is nothing here to soften. The kinds below exist because "PASS" used to
+# be printed for four different things, including a swallowed exception.
+#
+#   gate         integrity/shape/units/coverage. HARD: aborts the build.
+#   crosscheck   agreement with an external artifact. Soft.
+#   skipped      the check did not run, and why. Never counts as agreement.
+#   note         provenance only, no verdict.
+
 def gate(name, ok, detail):
-    QA[name] = {"ok": bool(ok), "detail": detail}
-    log(f"QA {'PASS' if ok else 'FAIL'} {name}: {detail}")
+    """Integrity gate. Aborts the build on failure."""
+    QA[name] = {"kind": "gate", "ok": bool(ok), "detail": detail}
+    log(f"GATE {'PASS' if ok else 'FAIL'} {name}: {detail}")
     if not ok:
         sys.exit(f"QA gate failed: {name}: {detail}")
+
+
+def crosscheck(name, ok, detail):
+    """Agreement with an artifact this build does not own. Never aborts."""
+    QA[name] = {"kind": "crosscheck", "ok": bool(ok), "detail": detail}
+    log(f"CROSSCHECK {'AGREES' if ok else 'DISAGREES'} {name}: {detail}")
+
+
+def skipped(name, why):
+    """The check did not run. Recorded ok=False so it can never read as a pass."""
+    QA[name] = {"kind": "skipped", "ok": False, "detail": f"did not run: {why}"}
+    log(f"SKIPPED {name}: {why}")
+
+
+def note(name, detail):
+    """Provenance only: no pass/fail verdict is implied."""
+    QA[name] = {"kind": "note", "detail": detail}
+    log(f"NOTE {name}: {detail}")
+
+
+_VERDICT = {
+    ("gate", True): "PASS", ("gate", False): "FAIL",
+    ("crosscheck", True): "AGREES", ("crosscheck", False): "DISAGREES",
+    ("skipped", False): "DID NOT RUN", ("skipped", True): "DID NOT RUN",
+}
+
+_QA_SECTIONS = [
+    ("gate", "Integrity gates (a failure aborts the build)"),
+    ("crosscheck", "External crosschecks"),
+    ("skipped", "Checks that did not run"),
+    ("note", "Notes (no verdict)"),
+]
+
+
+def qa_markdown(qa):
+    """Render the QA log by kind, so each entry states what it actually means."""
+    out = []
+    for kind, heading in _QA_SECTIONS:
+        rows = [(k, v) for k, v in qa.items() if v.get("kind", "gate") == kind]
+        if not rows:
+            continue
+        out.append(f"**{heading}**\n")
+        for k, v in rows:
+            verdict = _VERDICT.get((kind, bool(v.get("ok"))))
+            detail = v["detail"]
+            if not isinstance(detail, str):
+                detail = json.dumps(detail, default=str)
+            out.append(f"- {verdict + ' ' if verdict else ''}`{k}`: {detail}")
+        out.append("")
+    for kind, one, many, tail in (
+        ("skipped", "check DID NOT RUN", "checks DID NOT RUN",
+         "That coverage is UNVERIFIED in this build."),
+        ("crosscheck", "crosscheck DISAGREES", "crosschecks DISAGREE",
+         "Reconcile before quoting."),
+    ):
+        bad = [k for k, v in qa.items()
+               if v.get("kind") == kind and not v.get("ok")]
+        if bad:
+            out.append(f"> {len(bad)} {one if len(bad) == 1 else many}: "
+                       f"{', '.join(f'`{k}`' for k in bad)}. {tail}")
+            out.append("")
+    return "\n".join(out).rstrip()
 
 
 def haversine_sql(lat_col, lon_col):
@@ -840,7 +921,7 @@ def build_bikeshare_ring_day(con, bronze):
                    bike_starts BIGINT, bike_ends BIGINT)""")
     if bronze.startswith("s3://") or not os.path.isdir(folder):
         log("bikeshare: bronze is not local; SKIPPING (bike columns will be NULL)")
-        QA["bikeshare_built"] = {"ok": True, "detail": "skipped: non-local bronze"}
+        skipped("bikeshare_built", "non-local bronze; bike columns are NULL")
         return
 
     end_month = int(PANEL_END[:4] + PANEL_END[5:7])
@@ -897,7 +978,7 @@ def build_bikeshare_ring_day(con, bronze):
     n, trips = con.sql("""SELECT COUNT(*), SUM(bike_starts)
                           FROM bikeshare_ring_day""").fetchone()
     log(f"bikeshare_ring_day: {n} ring-days, {trips:,} ringed trip starts")
-    QA["bikeshare_built"] = {"ok": True, "detail": f"{n} ring-days from {len(zips)} zips"}
+    note("bikeshare_built", f"{n} ring-days from {len(zips)} zips")
 
 
 def build_panel(con, panel_end):
@@ -1014,7 +1095,7 @@ def crosscheck_bike_lift(con):
     this check stays faithful no matter how RING_EDGES_M changes."""
     if not con.sql("SELECT COUNT(*) FROM information_schema.tables "
                    "WHERE table_name = 'bike_trips'").fetchone()[0]:
-        QA["crosscheck_bike_lift"] = {"ok": True, "detail": "skipped: no bikeshare data"}
+        skipped("crosscheck_bike_lift", "no bikeshare data (non-local bronze)")
         return
     dist = haversine_sql("start_lat", "start_lng")
     row = con.sql(f"""
@@ -1029,34 +1110,50 @@ def crosscheck_bike_lift(con):
         FROM b JOIN calendar_day c USING (date)
     """).fetchone()
     if not row or row[0] is None or row[1] is None:
-        QA["crosscheck_bike_lift"] = {"ok": True, "detail": "skipped: no Aug-2024 data"}
+        skipped("crosscheck_bike_lift", "no Aug-2024 game/non-game contrast available")
         return
     lift = (row[0] - row[1]) / row[1] * 100
     gate("crosscheck_bike_lift", 4 <= lift <= 16,
          f"Aug-2024 game-day lift at 1 mi = {lift:.1f}% (reference ~9.3%)")
 
 
+MIN_LUKE_CORR = 0.90  # ring 1 (0-250m) is a subset of his 0-300m POI set
+
+
 def crosscheck_luke_residuals(con, residuals):
-    """Report-only: Luke's game_residuals_0_300m `v` vs our ring-1
-    visits_food. His v = daily visits to NAICS-722 (food services) POIs
-    within 0-300m; with the pre-metric 0-300m core ring this pipeline
-    reproduced it EXACTLY (corr = 1.0000, ratio = 1.0000, established
-    2026-07-18). After the metric re-ring (core = 0-250m) ring 1 is a subset
-    of his POI set, so expect corr high but below 1 and his/ours ratio above
-    1. Never fails the build (the file may be unreachable)."""
+    """Luke's game_residuals_0_300m `v` vs our ring-1 visits_food.
+
+    His v = daily visits to NAICS-722 (food services) POIs within 0-300m; with
+    the pre-metric 0-300m core ring this pipeline reproduced it EXACTLY
+    (corr = 1.0000, ratio = 1.0000, established 2026-07-18). After the metric
+    re-ring (core = 0-250m) ring 1 is a subset of his POI set, so expect corr
+    high but below 1 and his/ours ratio above 1.
+
+    Never fails the build: `residuals` belongs to the other pipeline and may
+    legitimately be unreachable. But an unreachable file is recorded as DID NOT
+    RUN, not as a pass. This is the only check tying the two pipelines together,
+    and it used to be able to stop running without anyone noticing: the previous
+    version wrote ok=True with the exception text as its detail, which the
+    generated README then rendered as `PASS crosscheck_luke_v: skipped: ...`.
+    """
     try:
         corr, ratio, n = con.sql(f"""
             SELECT corr(l.v, o.visits_food), AVG(l.v / o.visits_food), COUNT(*)
             FROM '{residuals}' l
             JOIN visits_ring_day o ON o.date = l.date AND o.ring_id = 1
         """).fetchone()
-        QA["crosscheck_luke_v"] = {
-            "ok": True,
-            "detail": f"n={n}, corr={corr:.4f}, mean(his v / our visits)={ratio:.4f}"}
-        log(f"cross-check vs Luke's v: n={n}, corr={corr:.4f}, mean ratio={ratio:.4f}")
     except Exception as e:
-        QA["crosscheck_luke_v"] = {"ok": True, "detail": f"skipped: {e}"}
-        log(f"cross-check vs Luke's v skipped: {e}")
+        skipped("crosscheck_luke_v", f"{residuals} unreadable: {e}")
+        return
+    # A zero-row join is its own failure mode: corr comes back NULL and the old
+    # f-string raised TypeError, landing in the same except and reading as a pass.
+    if not n or corr is None or ratio is None:
+        skipped("crosscheck_luke_v",
+                f"no overlapping dates with {residuals} (n={n})")
+        return
+    crosscheck("crosscheck_luke_v", corr >= MIN_LUKE_CORR,
+               f"n={n}, corr={corr:.4f}, mean(his v / our visits)={ratio:.4f}, "
+               f"want corr >= {MIN_LUKE_CORR}")
 
 
 TABLES = ["poi_rings", "visits_ring_day", "calendar_day", "weather_day",
@@ -1096,8 +1193,7 @@ def write_outputs(con, out, bronze, started):
 
 def readme_text(m):
     rows = "\n".join(f"| `{t}.parquet` | {n:,} |" for t, n in m["tables"].items())
-    qa = "\n".join(f"- {'PASS' if v['ok'] else 'FAIL'} `{k}`: {v['detail']}"
-                   for k, v in m["qa"].items())
+    qa = qa_markdown(m["qa"])
     return f"""# silver/ - conformed, joined, analysis-grain tables
 
 DERIVED DATA. Built only by `pipeline/build_silver.py` in the team repo
@@ -1172,7 +1268,15 @@ daily visits tables keep the full window; VISITS_BY_DAY shows no break. Gate
 - git_sha: {m['git_sha']}
 - bronze: {m['bronze']}
 
-QA gates:
+## QA log
+
+Every silver check is an INTEGRITY gate: parse, array length, Monday alignment,
+panel shape, unit conversions, coverage floors, and the local-vs-UTC hour
+reading. A failure aborts the build, so if these tables exist the gates passed.
+Silver asserts nothing about what the data SHOWS, so there are no result
+expectations here (those live in gold). A check that DID NOT RUN is listed as
+such and never counts as agreement.
+
 {qa}
 """
 
