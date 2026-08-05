@@ -91,6 +91,14 @@ def day_band_residuals_from_grid(pred: np.ndarray, data: dict,
         ["unit_id", "date", "hour", "dist_venue_m", "giants_home", "is_control"])
     df = grid.join(meta, on=["unit_id", "date", "hour"], how="inner")
     df = df.with_columns((pl.col("y") - pl.col("pred")).alias("resid"))
+    # predict_grid has no convolution history for the leading CONTEXT hours and
+    # leaves them NaN. NaN is a value rather than a null, so it survives the join
+    # and makes every band mean it enters NaN: one NaN residual takes out the
+    # whole day x band cell, and if that date is in the control pool the DiD goes
+    # NaN for every band at once with no error raised. Only 2023-01-02 is
+    # affected, and it is outside the control pool today only because the
+    # Warriors were at home that night.
+    df = df.filter(pl.col("resid").is_not_nan() & pl.col("resid").is_not_null())
     ev = df.filter(pl.col("hour").is_between(*hours)).with_columns(_band_expr())
     return ev.group_by(["date", "band"]).agg(
         pl.col("resid").mean().alias("resid"),
@@ -99,11 +107,27 @@ def day_band_residuals_from_grid(pred: np.ndarray, data: dict,
     )
 
 
+def _day_mean(dayband: pl.DataFrame, days, name: str) -> pl.DataFrame:
+    """Mean residual per band over `days`, counting a day once per appearance.
+
+    This joins rather than filters, and the difference matters. A bootstrap draw
+    contains duplicates, but is_in is a set-membership test, so filtering keeps a
+    day drawn three times exactly once. That turns every replicate into a sample of
+    about 63% of the days drawn without replacement, and a mean over a sample that
+    size carries a finite-population correction that shrinks its variance. We
+    measured the result at roughly 24% too narrow, so intervals came out too tight
+    and p-values too small. Joining against the drawn list keeps the duplicates and
+    gives a real bootstrap. Point estimates are unaffected either way, because the
+    observed day lists have no duplicates in them.
+    """
+    sel = pl.DataFrame({"date": list(days)}, schema={"date": dayband.schema["date"]})
+    return sel.join(dayband, on="date", how="inner").group_by("band").agg(
+        pl.col("resid").mean().alias(name))
+
+
 def _did(dayband: pl.DataFrame, game_days, ctrl_days) -> dict:
-    g = dayband.filter(pl.col("date").is_in(game_days)).group_by("band").agg(
-        pl.col("resid").mean().alias("g"))
-    c = dayband.filter(pl.col("date").is_in(ctrl_days)).group_by("band").agg(
-        pl.col("resid").mean().alias("c"))
+    g = _day_mean(dayband, game_days, "g")
+    c = _day_mean(dayband, ctrl_days, "c")
     j = g.join(c, on="band")
     return {r["band"]: r["g"] - r["c"] for r in j.iter_rows(named=True)}
 

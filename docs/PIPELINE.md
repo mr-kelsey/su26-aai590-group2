@@ -61,6 +61,23 @@ We picked 250m by measurement. Adjacent cells correlate at 0.445 on hourly resid
 0.154 and a graph built on it has almost nothing to pass around. If anyone wants to
 change the cell size, this measurement needs reconstructing first.
 
+Both of those figures, and the median split-half reliability of 0.990 quoted for
+250m cells, were measured inside the dense 5km panel around the ballpark on its 319
+qualifying cells. They do not describe this 452-cell citywide panel, which is
+sparser: adjacent cells correlate at about 0.11 citywide, and the panel's median
+split-half reliability is 0.966 with a floor of 0.151. 117 of the 452 cells fall
+below 0.90. Quote the panel's own numbers when describing the panel.
+
+The POI-count rule keeps cells on commercial density rather than on signal
+quality, and those are not the same thing. It drops large single-tenant
+destinations that are neither thin nor noisy: San Francisco State (1 POI, 27.1M
+visits), USF (2, 12.5M), UCSF (1, 6.2M), the Golden Gate Park museums, and Oracle
+Park itself, whose cell holds 4 POIs. The dropped cells are 18.1% of POIs but
+14.8% of citywide visits. Chase Center's cell holds 11 POIs and is kept, so the
+two venues are not treated alike, and the Tier 3 crossover below measures Oracle
+Park's rings without the ballpark against Chase Center's inner ring with the
+arena still in it.
+
 
 ## Building the panel
 
@@ -125,8 +142,43 @@ cell-hour-of-week baseline by 32%.
 Tier 2 is STGCN-style rather than DCRNN. Diffusion convolution models lagged
 spatial propagation, and we measured lag-1 spatial correlation at or slightly below
 contemporaneous at every distance, so there is no travelling wave to model here.
-Best configuration is flow edges at test MAE 1.0689, which loses to the GBM by 16%.
-The graph itself does help inside the STGNN family. Flow is 1.9% better than no graph and distance 1.6% better, while raw contiguity hurts by 1.6%, which is what a 0.11 correlation predicts.
+
+Every Tier 2 number below is a mean over three seeds, because one run cannot rank
+the edge families. A repeat at a fixed seed reproduces test MAE to 0.0011, so the
+model is effectively deterministic, but the spread across seeds is 0.021, twenty
+times larger. Earlier single-run ablations were reading that spread as structure.
+
+| edges | test MAE (mean of 3 seeds) | sd | vs no graph, paired by seed |
+|---|---|---|---|
+| none | 0.9900 | 0.0278 | baseline |
+| contiguity | 1.0308 | 0.0341 | +0.0408 +/- 0.0103, worse |
+| distance | 1.0125 | 0.0101 | +0.0225 +/- 0.0202, not resolvable |
+| flow | 1.0050 | 0.0122 | +0.0150 +/- 0.0234, not resolvable |
+
+No graph is the best arm, and contiguity is reliably worse than no graph: it loses
+in all three seeds, about four standard deviations from zero once the comparison is
+paired. Distance and flow cannot be separated from no graph at three seeds.
+
+Two caveats on that table. It was produced under a fixed 2,500-step budget that
+truncated the distance and flow arms while their validation curves were still
+descending, so their comparison against no graph is biased downward. And the same
+budget cost about 8.5% in absolute terms: the best Tier 2 result on record is 0.9224
+under the shipped constant-rate schedule, not the 0.99 here. Both need a rerun on a
+longer budget at the shipped schedule before these numbers are quoted as final.
+
+An earlier version of this section reported flow 1.9% better than no graph and
+distance 1.6% better, with contiguity 1.6% worse. Those three figures came from
+three different runs at different sample sizes and checkpointing schemes, so they
+never described one experiment, and the multi-seed result reverses the sign for
+flow and distance. The Tier 2 figure of 1.0689 quoted there came from a
+configuration that is not reproducible from the current module.
+
+Tier 1 and Tier 2 are still not scored on the same basis. Tier 1 evaluates every
+control cell-hour in the test split once; Tier 2 evaluates inside overlapping 48h
+windows at stride 6, so interior hours enter its average about four times. Any
+"Tier 2 loses by X%" claim is comparing two different populations until
+`scripts/compare_tiers.py` is run, which scores both through `predict_grid` at one
+prediction per cell-hour.
 
 ## Turning residuals into effects
 
@@ -137,6 +189,17 @@ Differencing against the same period cancels the vendor drift in the hourly data
 Inference clusters at the day. Cell-hours within a day are heavily
 correlated, so naive cell-hour t-statistics overstate significance by roughly 3x. The
 0-500m band reads t=7.2 unclustered but only z=+2.2 against a placebo.
+
+Every interval in this section, and every dollar range below, predates a fix to the
+bootstrap and is too narrow. The resampler drew days with replacement and then
+selected them with `is_in`, which is set membership, so a day drawn three times
+counted once and each replicate collapsed to the ~63% of days drawn at least once.
+Those survivors are a sample without replacement, which carries a finite-population
+correction: with m ~ 0.632n the variance runs about 0.58x correct, so standard
+errors came out ~0.76x and intervals about 24% too narrow. Point estimates are
+unaffected, because the observed day lists contain no duplicates. Correcting it
+widens every interval by roughly a third, which puts the 2-4km band below at real
+risk of crossing zero. These tables need re-quoting from a rerun.
 
 Across 2023 and 2024, 163 games against 388 control days, with a 2,000-draw
 day-clustered bootstrap:
@@ -229,6 +292,16 @@ Mission Bay development where commerce is almost entirely event-driven, whereas
 Oracle Park's surroundings have a busy independent SoMa economy running every night.
 It rests on one cell, so the interval matters more than the point estimate.
 
+That explanation is incomplete, and the two columns are not measuring the same
+thing. Chase's inner-ring cell is the cell that contains Chase Center, which the
+POI-count rule kept, so a large part of that +650% is the arena's own gate. Oracle
+Park's cell was dropped by the same rule, so its +45.2% is spillover into
+surrounding commerce with no gate in it at all. The crossover's logic survives,
+since each venue's ring still responds to its own events and not the other's, but
+the magnitudes are not comparable and the table should not be read as though they
+were. The fix is to flag venue cells explicitly and hold them out of the bands for
+both venues, reporting gate activity as its own line.
+
 ## Getting to dollars
 
 `nowcast/game_dollars.py` converts the effect into money using the existing
@@ -239,7 +312,14 @@ $14.18B).
 
 That gives $67,819 per game, with a 95% range of $37.7k to $97.9k. Across the 163 home
 games in 2023 and 2024 that is $11.1M, so roughly $5.5M in a season of about 82 home
-games.
+games. `game_dollars` returns that two-year figure as `window_total` and derives
+`per_season` from it. We called the key `season`, which invited reading $11.1M as a
+single year.
+
+The range carries the same too-narrow bootstrap as the effect tables above, and
+`BAND_EFFECTS` is hardcoded from that run. Most of the dollars come from the 1-4km
+bands and 2-4km is the band most likely to lose significance once the intervals
+widen, so the correction moves the total and not only the range around it.
 
 The dollars run over the same two years as the effects. Running them over the full
 2023 to 2025 range instead moves the per-game figure by 2.6%, so matching the windows

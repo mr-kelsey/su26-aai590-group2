@@ -201,3 +201,91 @@ def test_composition_bands_match_the_estimator():
             .map_elements(lambda b: float(np.exp(eff[b])), return_dtype=pl.Float64)
             .to_numpy())
     assert got == pytest.approx(want)
+
+
+# ------------------------------------------- 5. the bootstrap resamples, not subsets
+
+def test_bootstrap_draw_weights_repeated_days():
+    """A day drawn twice must count twice.
+
+    The fifth silent one, and the one that already bit us. The bootstrap draws days
+    with replacement, so a draw contains duplicates. Selecting them with
+    `is_in` is set membership, so it keeps each day once and quietly turns every
+    replicate into a ~63% subsample drawn without replacement. That has a
+    finite-population correction, so the spread comes out about 24% too narrow:
+    intervals too tight, p-values too small, and nothing about the output looks wrong.
+    """
+    import datetime as dt
+    import polars as pl
+    from eia_pipeline.nowcast.effects import _day_mean, _did
+
+    d1, d2 = dt.date(2024, 5, 1), dt.date(2024, 5, 2)
+    db = pl.DataFrame({
+        "date": [d1, d2],
+        "band": ["0-500m", "0-500m"],
+        "resid": [0.0, 1.0],
+    })
+
+    # drawn once each: the plain mean
+    assert _day_mean(db, [d1, d2], "m")["m"][0] == pytest.approx(0.5)
+    # d1 drawn twice: it must pull the mean down, not be deduplicated away
+    assert _day_mean(db, [d1, d1, d2], "m")["m"][0] == pytest.approx(1 / 3)
+    # the failing behaviour, kept explicit so the difference is visible
+    deduped = db.filter(pl.col("date").is_in([d1, d1, d2]))["resid"].mean()
+    assert deduped == pytest.approx(0.5)
+
+    # and it carries through the DiD
+    ctl = pl.DataFrame({"date": [dt.date(2024, 5, 3)], "band": ["0-500m"], "resid": [0.0]})
+    both = pl.concat([db, ctl])
+    assert _did(both, [d1, d1, d2], [dt.date(2024, 5, 3)])["0-500m"] == pytest.approx(1 / 3)
+
+
+# ------------------------------------- 6. the Tier 2 grid's NaN prologue is dropped
+
+def test_grid_readout_drops_the_unpredicted_context_hours(monkeypatch):
+    """A NaN prediction must not become a NaN effect.
+
+    predict_grid has no convolution history for the leading CONTEXT hours and leaves
+    them NaN. NaN is a value rather than a null, so it survives the join and makes
+    every band mean it enters NaN. One NaN residual takes out the whole day x band
+    cell, and if that date is in the control pool the DiD goes NaN for every band at
+    once with no error raised. Only 2023-01-02 is affected, and it is outside the
+    control pool today only because the Warriors were at home that night.
+    """
+    import datetime as dt
+    import numpy as np
+    import polars as pl
+    from eia_pipeline.nowcast import effects
+
+    d0, d1 = dt.date(2023, 1, 2), dt.date(2023, 1, 3)
+    units = ["c1_1", "c1_2"]
+    N, T = 2, 48
+    ts = pl.DataFrame({
+        "date": [d0] * 24 + [d1] * 24,
+        "hour": list(range(24)) * 2,
+    })
+    data = {"T": T, "N": N, "units": units, "ts": ts,
+            "y": np.ones((T, N), dtype=np.float32)}
+
+    # exactly what predict_grid emits: NaN prologue, then real predictions
+    pred = np.zeros((T, N), dtype=np.float32)
+    pred[:24, :] = np.nan
+
+    meta = pl.DataFrame({
+        "unit_id": [u for _ in range(T) for u in units],
+        "date": [r["date"] for r in ts.iter_rows(named=True) for _ in units],
+        "hour": [r["hour"] for r in ts.iter_rows(named=True) for _ in units],
+        "dist_venue_m": [100.0] * (T * N),
+        "giants_home": [False] * (T * N),
+        "is_control": [True] * (T * N),
+    })
+    monkeypatch.setattr("eia_pipeline.nowcast.models.tier1_gbm.load",
+                        lambda *a, **k: meta)
+
+    out = effects.day_band_residuals_from_grid(pred, data)
+
+    assert out.height > 0, "the readout dropped everything, not just the NaN hours"
+    assert not out["resid"].is_nan().any(), "a NaN residual reached the band means"
+    # the unpredicted day is absent rather than present-and-NaN
+    assert d0 not in out["date"].to_list()
+    assert d1 in out["date"].to_list()
