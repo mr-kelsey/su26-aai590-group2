@@ -247,7 +247,7 @@ def train(edge_key: str = "distance", epochs: int = 25, batch: int = 16,
           data: dict | None = None, verbose: bool = True,
           return_model: bool = False, stride: int = 6,
           dropout: float = 0.1, eval_every: int = 40,
-          patience_evals: int = 12) -> dict:
+          patience_evals: int = 12, train_eval_n: int = 300) -> dict:
     """Train the STGNN, checkpointing on validation at STEP granularity.
 
     Why steps and not epochs: at stride 6 an epoch is ~182 gradient steps, 4x what
@@ -260,6 +260,26 @@ def train(edge_key: str = "distance", epochs: int = 25, batch: int = 16,
 
     lr defaults to 5e-4 rather than 2e-3 for the same reason: 4x the steps per
     epoch at the old rate was overshooting.
+
+    We tried a warmup-plus-cosine schedule on a fixed step budget and rejected it.
+    It did narrow the spread, but it cost about 8.5% on test MAE, 0.9579 at best
+    against 0.9224 under this schedule, because it decays into a floor before the
+    model reaches its optimum. Its fixed budget also cut the distance and flow
+    arms off while their validation curves were still descending, so it biased
+    the graph comparison downward. The schedule was never the problem. A repeat
+    run at a fixed seed reproduces test MAE to 0.0011 while the spread across
+    seeds is 0.021, about twenty times larger, so replicate across seeds rather
+    than reshaping the schedule.
+
+    `history` records both sides of the fit at every checkpoint, so the train/val
+    gap is readable rather than inferred from where early stopping landed. It
+    carries `train_mae_run`, the running mean of minibatch error since the last
+    checkpoint, which is the training curve proper and costs no extra forward
+    passes; and `train_mae`, an eval-mode pass over a fixed random subsample of
+    `train_eval_n` windows, which is the number directly comparable with
+    `val_mae` because dropout is off in both. Set `train_eval_n=0` to skip the
+    second one. Neither draws from the global RNG, so runs stay bit-comparable
+    with ones made before this was added.
     """
     torch.manual_seed(seed)
     np.random.seed(seed)
@@ -283,12 +303,11 @@ def train(edge_key: str = "distance", epochs: int = 25, batch: int = 16,
     n_par = sum(p.numel() for p in model.parameters())
     opt = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-4)
 
-    def evaluate(name):
-        """Masked MAE/RMSE over one split's scored hours. Restores train mode."""
+    def evaluate_idx(idx):
+        """Masked MAE/RMSE over the given window starts. Restores train mode."""
         model.eval()
         tot_ae = tot_se = tot_n = 0.0
         with torch.no_grad():
-            idx = wins[name]
             for i in range(0, len(idx), batch):
                 sl = torch.stack([torch.arange(t0, t0 + WINDOW)
                                   for t0 in idx[i:i + batch]]).to(dev)
@@ -300,8 +319,19 @@ def train(edge_key: str = "distance", epochs: int = 25, batch: int = 16,
         model.train()
         return tot_ae / tot_n, (tot_se / tot_n) ** 0.5
 
+    def evaluate(name):
+        return evaluate_idx(wins[name])
+
+    # Fixed random subsample, drawn once from a local generator so the global
+    # stream the training shuffle uses is untouched.
+    _sub = np.asarray(wins["train"])
+    if train_eval_n and len(_sub) > train_eval_n:
+        _sub = np.random.default_rng(seed).choice(_sub, train_eval_n, replace=False)
+
     best = {"val_mae": float("inf"), "step": 0, "state": None}
     hist, step, stop = [], 0, False
+    run_ae = torch.zeros((), device=dev)
+    run_n = torch.zeros((), device=dev)
     for ep in range(epochs):
         idx = list(wins["train"])
         np.random.shuffle(idx)
@@ -316,10 +346,18 @@ def train(edge_key: str = "distance", epochs: int = 25, batch: int = 16,
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
             opt.step()
+            with torch.no_grad():
+                run_ae += ((pred - t).abs() * m).sum()
+                run_n += m.sum()
             step += 1
             if step % eval_every == 0:
                 vm, _ = evaluate("val")
-                hist.append({"step": step, "val_mae": vm})
+                rec = {"step": step, "epoch": ep, "val_mae": vm,
+                       "train_mae_run": (run_ae / run_n.clamp(min=1)).item()}
+                run_ae.zero_(); run_n.zero_()
+                if train_eval_n:
+                    rec["train_mae"], _ = evaluate_idx(_sub)
+                hist.append(rec)
                 if vm < best["val_mae"]:
                     best = {"val_mae": vm, "step": step,
                             "state": {k: v.detach().clone()
@@ -336,6 +374,9 @@ def train(edge_key: str = "distance", epochs: int = 25, batch: int = 16,
     if best["state"] is not None:
         model.load_state_dict(best["state"])
     te_mae, te_rmse = evaluate("test")
+    # Measured at the restored checkpoint, so train_mae/val_mae/test_mae all
+    # describe the same weights. This is the gap the overfitting claim rests on.
+    tr_mae = evaluate_idx(_sub)[0] if train_eval_n else None
 
     model.eval()
     with torch.no_grad():
@@ -353,9 +394,10 @@ def train(edge_key: str = "distance", epochs: int = 25, batch: int = 16,
     neigh = float(sum(m.neigh_w.weight.norm().item() for m in model.gconv))
     slf = float(sum(m.self_w.weight.norm().item() for m in model.gconv))
     out = {"edges": edge_key, "params": n_par, "best_step": best["step"],
-           "total_steps": step, "val_mae": best["val_mae"],
+           "total_steps": step, "train_mae": tr_mae, "val_mae": best["val_mae"],
            "test_mae": te_mae, "test_rmse": te_rmse, "test_r2": r2, "test_bias": bias,
            "n_windows": {k: len(v) for k, v in wins.items()},
+           "train_eval_n": int(len(_sub)) if train_eval_n else 0,
            "neigh_over_self": neigh / slf, "history": hist}
     if return_model:
         out["model"] = model; out["A"] = A

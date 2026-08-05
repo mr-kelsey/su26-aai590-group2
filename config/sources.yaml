@@ -238,7 +238,7 @@ sources:
     phase: onsite
     grain: POI (ID_STORE) x week; VISITS_BY_EACH_HOUR gives 168 hourly within-week
     cadence: weekly
-    endpoint: s3://aai-590-group2-capstone/Gold/advan_weekly_patterns/  # team capstone bucket
+    endpoint: s3://${S3_BUCKET}/bronze/advan_weekly_patterns/  # team capstone bucket; matches ingest.advan_bronze.bronze_patterns()
     auth: aws (SageMaker execution role reads; lucas IAM user cannot GetObject directly)
     format: parquet (snappy)
     license: licensed (Advan via capstone subscription — NOT scraped, NOT a broker; D9-clean)

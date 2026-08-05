@@ -127,8 +127,17 @@ def per_game(con=None, daily_dollars_path: str | None = None) -> tuple[pl.DataFr
                      "lo": float((evening * frac(lo)).mean()),
                      "hi": float((evening * frac(hi)).mean())})
     r = pl.DataFrame(rows)
+    # n_games counts every game in the estimation window, and that window is two
+    # seasons, so per_game x n_games is a window total rather than a season. We
+    # called the key "season", which invited reading $11.1M across 163 games in
+    # 2023 and 2024 as a single year's figure when the season number is about
+    # $5.5M. We count seasons from the data rather than hardcoding two, so this
+    # stays right if the window moves.
+    n_seasons = int(j["date"].dt.year().n_unique())
     total = {"per_game": float(r["incremental"].sum()),
              "lo": float(r["lo"].sum()), "hi": float(r["hi"].sum()),
-             "n_games": int(r["games"].max()), "evening_share": float(ev)}
-    total["season"] = total["per_game"] * total["n_games"]
+             "n_games": int(r["games"].max()), "evening_share": float(ev),
+             "n_seasons": n_seasons}
+    total["window_total"] = total["per_game"] * total["n_games"]
+    total["per_season"] = total["window_total"] / n_seasons
     return r, total

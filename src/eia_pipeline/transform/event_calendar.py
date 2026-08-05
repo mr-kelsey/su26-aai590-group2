@@ -75,9 +75,18 @@ def _chase_events() -> pl.DataFrame:
     """Warriors + Valkyries home games and Chase concerts (~0.7km covariate)."""
     frames = []
     for f in ("nba_warriors_schedule.csv", "wnba_valkyries_schedule.csv"):
+        # We filter on venue and not just home_game. The Warriors played at
+        # Oracle Arena in Oakland until October 2019, and those nights draw no
+        # crowd near Oracle Park. build_calendar defaults to a 2016 start, so
+        # without this a pre-2019 window contaminates the control pool with
+        # events held in another city. This drops nothing from the CSVs we hold
+        # today, where all 280 Warriors and 46 Valkyries home rows are already at
+        # Chase, so it guards a window we do not currently run rather than fixing
+        # a live error. build_silver.py in the team pipeline filters the same way.
         frames.append(
             pl.read_csv(RAW / "competing_events" / f)
-            .filter(pl.col("home_game") == True)  # noqa: E712
+            .filter((pl.col("home_game") == True)  # noqa: E712
+                    & pl.col("venue").str.contains("(?i)chase"))
             .with_columns(pl.col("date").str.to_date())
             .select("date", pl.col("name").alias("chase_event"))
         )

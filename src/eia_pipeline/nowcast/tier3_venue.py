@@ -68,8 +68,11 @@ def day_band(model, df: pl.DataFrame, venue: str, hours=EVENING) -> pl.DataFrame
 
 
 def _did(db: pl.DataFrame, tdays, cdays) -> dict:
-    g = db.filter(pl.col("date").is_in(tdays)).group_by("band").agg(pl.col("resid").mean().alias("g"))
-    k = db.filter(pl.col("date").is_in(cdays)).group_by("band").agg(pl.col("resid").mean().alias("k"))
+    """DiD per band. See effects._day_mean for why this joins instead of filtering."""
+    from .effects import _day_mean
+
+    g = _day_mean(db, tdays, "g")
+    k = _day_mean(db, cdays, "k")
     j = g.join(k, on="band")
     return {r["band"]: r["g"] - r["k"] for r in j.iter_rows(named=True)}
 
