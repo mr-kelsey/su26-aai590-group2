@@ -83,7 +83,7 @@ It proves the ingest → land → query → residual loop before we scale to the
     lexicographic neighbour, with no exception); and the control CTE in
     `build_rolling_baseline_serve` filters `clean_control_strict AND observed`,
     without which every unobserved future zero flattens the baselines after it.
-    `tests/test_serve_invariants.py` pins both.
+    `tests/test_serve_invariants.py` pins both. `serve/stgnn.py` is the Tier 2 arm behind the SAME wire contract: flow-arm STGNN checkpoint, 24-hour `*_serve_24` panel (bit-identical to training on the overlap), t_index clamped at the panel end, counterfactual grid precomputed into the tarball (no torch in the container), and its own effects_stgnn.json from STGNN residuals through the injectable effects_v2 estimator. Endpoint `eia-nowcast-oracle-ripple-stgnn-v1`; every deploy/package/smoke command takes `--model oracle-ripple-stgnn`.
 
 ### Also in this repo (team-side, imported 2026-07-28)
 - `pipeline/`    — the team's DuckDB medallion build: `build_silver.py`
