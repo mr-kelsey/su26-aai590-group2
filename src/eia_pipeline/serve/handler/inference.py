@@ -325,7 +325,11 @@ def predict_fn(req, ctx):
         "measure": MEASURE,
         "date": date,
         "window": {"hours": [lo_h, hi_h], "label": "4pm to 11pm"},
-        "bands_m": [b["inner_m"] for b in out_bands] + [5000.0],
+        # The finite ring edges only, so this deep-equals the site's
+        # RING_EDGES_M and can be asserted against it. The last band is
+        # open-ended (outer_m null) and contributes no edge.
+        "bands_m": [b["inner_m"] for b in out_bands if b["outer_m"] is not None]
+                   + [max(b["outer_m"] for b in out_bands if b["outer_m"] is not None)],
         "game": {
             "home": is_game,
             "n_games": meta["n_games"],
