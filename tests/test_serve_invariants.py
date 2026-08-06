@@ -317,3 +317,92 @@ def test_model_geometry_matches_the_website_cells():
         f"{len(model - site)} model-only, {len(site - model)} site-only cells; "
         "regenerate website/scripts/build-cells.py"
     )
+
+
+# ------------------------------------------------------- the STGNN grid arm
+
+STGNN_ART = settings.data_dir / "serve_artifacts_stgnn"
+
+
+def test_stgnn_manifest_contract():
+    _need(STGNN_ART / "manifest.json")
+    man = json.loads((STGNN_ART / "manifest.json").read_text())
+    assert man["cf_source"] == "grid"
+    assert man["n_rows"] == man["n_cells"] * man["n_dates"] * (
+        man["evening_hours"][1] - man["evening_hours"][0] + 1)
+    # date 0 has no convolution context, so the honest window starts a day late
+    assert man["serve_window"][0] == "2023-01-03"
+    assert "t_index_policy" in man and "clamped" in man["t_index_policy"]
+
+
+def test_stgnn_grid_matches_the_row_index_contract():
+    """Two independent routes to the same value: the handler's flat-offset
+    formula against a reshape-and-index. A wrong stride, transposed layout or
+    shifted hour origin disagrees immediately."""
+    _need(STGNN_ART / "cf_grid.npz")
+    man = json.loads((STGNN_ART / "manifest.json").read_text())
+    grid = np.load(STGNN_ART / "cf_grid.npz")["cf_log"]
+    n_c, n_d = man["n_cells"], man["n_dates"]
+    lo, hi = man["evening_hours"]
+    n_h = hi - lo + 1
+    cube = grid.reshape(n_d, n_h, n_c)
+    rng = np.random.default_rng(7)
+    di = rng.integers(1, n_d, 500)          # skip the NaN first date
+    hr = rng.integers(lo, hi + 1, 500)
+    uc = rng.integers(1, n_c + 1, 500)
+    rows = (di * n_h + (hr - lo)) * n_c + (uc - 1)
+    np.testing.assert_array_equal(grid[rows], cube[di, hr - lo, uc - 1])
+
+
+def test_stgnn_grid_nan_only_on_the_context_less_first_date():
+    _need(STGNN_ART / "cf_grid.npz")
+    man = json.loads((STGNN_ART / "manifest.json").read_text())
+    grid = np.load(STGNN_ART / "cf_grid.npz")["cf_log"]
+    n_h = man["evening_hours"][1] - man["evening_hours"][0] + 1
+    per_date = grid.reshape(man["n_dates"], n_h * man["n_cells"])
+    has_nan = np.isnan(per_date).any(axis=1)
+    assert has_nan[0], "date 0 should be NaN (no convolution context)"
+    assert not has_nan[1:].any(), "NaN leaked past the first date"
+
+
+def test_stgnn_geometry_matches_the_gbm_artifacts():
+    """Both tarballs must describe the identical 452 cells in identical order,
+    or the shared row-index contract and the website cell join both break."""
+    _need(STGNN_ART / "unit_ids.json")
+    _need(ARTIFACTS / "unit_ids.json")
+    a = json.loads((STGNN_ART / "unit_ids.json").read_text())
+    b = json.loads((ARTIFACTS / "unit_ids.json").read_text())
+    assert a == b
+
+
+def test_stgnn_effects_genuinely_differ_from_the_gbm_effects():
+    """The whole point of the second effect layer: per-cell lift is a pure
+    function of it, so identical effects would render identical choropleths
+    and the website toggle would look broken."""
+    _need(STGNN_ART / "effects.json")
+    _need(ARTIFACTS / "effects.json")
+    a = json.loads((STGNN_ART / "effects.json").read_text())
+    b = json.loads((ARTIFACTS / "effects.json").read_text())
+    sig_a = {x["id"]: x["did_log"] for x in a["bands"] if x["significant"]}
+    sig_b = {x["id"]: x["did_log"] for x in b["bands"] if x["significant"]}
+    shared = set(sig_a) & set(sig_b)
+    assert shared, "no band significant in both effect layers"
+    assert any(abs(sig_a[k] - sig_b[k]) > 1e-6 for k in shared), (
+        "STGNN effect layer is numerically identical to the GBM one")
+
+
+def test_stgnn_checkpoint_carries_the_reapplication_contract():
+    ckpt_p = BASE / "stgnn_flow.pt"
+    _need(ckpt_p)
+    import torch
+
+    ckpt = torch.load(ckpt_p, map_location="cpu", weights_only=False)
+    for key in ("state", "norm", "arch", "units", "edge_key", "seed",
+                "t_index_clamp", "t_index_feature_index"):
+        assert key in ckpt, f"checkpoint missing {key}"
+    assert len(ckpt["units"]) == ckpt["arch"]["N"] == 452
+    # panel end 2025-12-31 is day 1094 from the 2023-01-02 epoch; the clamp
+    # freezes the drift trend exactly where the GBM's trees freeze it
+    assert ckpt["t_index_clamp"] == 1094.0
+    for k in ("x_nt", "x_g", "x_s"):
+        assert set(ckpt["norm"][k]) == {"mu", "sd"}

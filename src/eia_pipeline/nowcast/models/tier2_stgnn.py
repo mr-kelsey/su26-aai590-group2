@@ -228,18 +228,26 @@ def _windows(split: list, T: int, stride: int = STRIDE):
 
 
 def _standardise(d: dict, train_t: np.ndarray):
-    """Z-score using TRAIN hours only, so val/test statistics never leak in."""
+    """Z-score using TRAIN hours only, so val/test statistics never leak in.
+
+    Returns (d, norm), norm holding the mu/sd actually applied per tensor. The
+    serve path needs them verbatim: re-deriving stats on a different window
+    would silently rescale every input the checkpoint was fit against.
+    """
+    norm = {}
     for key, axis in (("x_nt", (0, 1)), ("x_g", (0,))):
         a = d[key]
         sub = a[train_t]
         mu, sd = sub.mean(axis=axis, keepdims=True), sub.std(axis=axis, keepdims=True)
         sd[sd == 0] = 1.0
         d[key] = ((a - mu) / sd).astype(np.float32)
+        norm[key] = {"mu": mu.tolist(), "sd": sd.tolist()}
     s = d["x_s"]
     mu, sd = s.mean(0, keepdims=True), s.std(0, keepdims=True)
     sd[sd == 0] = 1.0
     d["x_s"] = ((s - mu) / sd).astype(np.float32)
-    return d
+    norm["x_s"] = {"mu": mu.tolist(), "sd": sd.tolist()}
+    return d, norm
 
 
 def train(edge_key: str = "distance", epochs: int = 25, batch: int = 16,
@@ -288,7 +296,7 @@ def train(edge_key: str = "distance", epochs: int = 25, batch: int = 16,
     T, N = d["T"], d["N"]
     wins = _windows(d["split"], T, stride)
     train_t = np.concatenate([np.arange(t0 + CONTEXT, t0 + WINDOW) for t0 in wins["train"]])
-    d = _standardise(d, train_t)
+    d, norm = _standardise(d, train_t)
 
     dev = device()
     A = adjacency(edge_key, d["uidx"], N).to(dev)
@@ -402,6 +410,16 @@ def train(edge_key: str = "distance", epochs: int = 25, batch: int = 16,
     if return_model:
         out["model"] = model; out["A"] = A
         out["tensors"] = {"x_nt": x_nt, "x_g": x_g, "x_s": x_s}
+        # Everything a checkpoint needs to be re-applied elsewhere, gated on
+        # return_model so ablation JSON outputs stay byte-comparable with runs
+        # made before this existed. `units` IS the node-ordering contract;
+        # `norm` is the train-split standardisation actually applied above.
+        out["norm"] = norm
+        out["units"] = d["units"]
+        out["seed"] = seed
+        out["arch"] = {"N": N, "f_nt": int(x_nt.shape[-1]), "f_g": int(x_g.shape[-1]),
+                       "f_s": int(x_s.shape[-1]), "hidden": hidden, "blocks": blocks,
+                       "d_emb": int(model.emb.weight.shape[1])}
     return out
 
 

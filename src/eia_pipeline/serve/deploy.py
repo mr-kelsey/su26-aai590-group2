@@ -30,10 +30,40 @@ from ..settings import settings
 REGION = "us-east-2"
 ACCOUNT = "541974874359"
 BUCKET = "aai-590-group2-capstone"
-GROUP = "eia-nowcast-oracle-ripple"
-ENDPOINT = "eia-nowcast-oracle-ripple-v1"
 INSTANCE = "ml.m5.large"
-MODEL_KEY = "eia-nowcast/models/oracle-ripple/model.tar.gz"
+
+# Two model families, one deploy path. Every subcommand takes --model and
+# defaults to the GBM, so existing invocations keep their exact behavior.
+FAMILIES = {
+    "oracle-ripple": {
+        "group": "eia-nowcast-oracle-ripple",
+        "endpoint": "eia-nowcast-oracle-ripple-v1",
+        "key": "eia-nowcast/models/oracle-ripple/model.tar.gz",
+        "artifact_dir": "serve_artifacts",
+        "tarball": "model.tar.gz",
+        "group_desc": (
+            "Oracle Park game-evening ripple. Tier 1 LightGBM counterfactual "
+            "on log1p(person-hours) at 250m cell-hour grain, plus a "
+            "canonical-ring difference-in-differences effect layer."),
+    },
+    "oracle-ripple-stgnn": {
+        "group": "eia-nowcast-oracle-ripple-stgnn",
+        "endpoint": "eia-nowcast-oracle-ripple-stgnn-v1",
+        "key": "eia-nowcast/models/oracle-ripple-stgnn/model.tar.gz",
+        "artifact_dir": "serve_artifacts_stgnn",
+        "tarball": "model-stgnn.tar.gz",
+        "group_desc": (
+            "Oracle Park game-evening ripple, Tier 2 arm. Spatiotemporal graph "
+            "network counterfactual (visitor-origin flow edges) precomputed to "
+            "a cf grid, plus its own canonical-ring DiD effect layer derived "
+            "from STGNN residuals. Same wire schema as the Tier 1 endpoint."),
+    },
+}
+
+# module-level defaults kept for backward compatibility with existing imports
+GROUP = FAMILIES["oracle-ripple"]["group"]
+ENDPOINT = FAMILIES["oracle-ripple"]["endpoint"]
+MODEL_KEY = FAMILIES["oracle-ripple"]["key"]
 
 # Verified present in this account: AmazonSageMakerFullAccess plus a policy
 # granting s3:GetObject on arn:aws:s3:::*, which is what lets it pull the
@@ -66,8 +96,14 @@ def _sm():
     return boto3.client("sagemaker", region_name=REGION)
 
 
-def _manifest() -> dict:
-    p = settings.data_dir / "serve_artifacts" / "manifest.json"
+def _fam(model: str) -> dict:
+    if model not in FAMILIES:
+        raise SystemExit(f"unknown model {model!r}; one of {sorted(FAMILIES)}")
+    return FAMILIES[model]
+
+
+def _manifest(model: str = "oracle-ripple") -> dict:
+    p = settings.data_dir / _fam(model)["artifact_dir"] / "manifest.json"
     return json.loads(p.read_text())
 
 
@@ -93,29 +129,78 @@ def _meta_safe(d: dict) -> dict:
 # ---------------------------------------------------------------- upload
 
 
-def upload(tarball: Path | None = None) -> str:
+def upload(tarball: Path | None = None, model: str = "oracle-ripple") -> str:
     from .package import upload as _up
 
-    return _up(tarball, key=MODEL_KEY)
+    fam = _fam(model)
+    tarball = tarball or (settings.data_dir / "dist" / fam["tarball"])
+    return _up(tarball, key=fam["key"])
 
 
 # ---------------------------------------------------------------- register
 
 
-def register(model_data_url: str | None = None, notes: str = "") -> str:
+def _metadata(model: str, man: dict, eff: dict) -> dict:
+    """Per-family registry metadata. Shared limitations stay shared."""
+    common = {
+        "target": "person_hours",
+        "measure": "visitor_hours",
+        "evening_hours": "16-23",
+        "training_window": "/".join(man["training_window"]),
+        "serve_window": "/".join(man["serve_window"]),
+        "observed_panel_through": man["observed_panel_through"],
+        "effect_window": "/".join(eff["effect_window"]),
+        "n_cells": str(man["n_cells"]),
+        "featurespec_sha256": man["featurespec_sha256"][:16],
+        "limitation_core_ring": "0-250m ring is one 250m cell with 27 POIs",
+        "limitation_projected": (
+            f"dates after {man['observed_panel_through']} are forward-projected"),
+        "limitation_window": "effects are evening-only 16-23 and must not be "
+                             "applied to a whole day",
+    }
+    core = next(b for b in eff["bands"] if b["id"] == "b1")
+    common["core_ring_lift_pct"] = f"{core['lift_pct']:.2f}"
+    suppressed = [b["id"] for b in eff["bands"] if not b.get("significant", True)]
+    common["limitation_suppressed_bands"] = (
+        "bands not distinguishable from zero ship as zero: "
+        + (",".join(suppressed) or "none"))
+    if model == "oracle-ripple":
+        common.update({
+            "objective": "l2_on_log1p",
+            "held_out_test_mae": "0.9185",
+            "held_out_test_r2": "0.7568",
+            "served_variant": "full_control_all_splits",
+        })
+    else:
+        met = man.get("checkpoint_metrics", {})
+        common.update({
+            "objective": "masked_l2_on_log1p",
+            "edge_key": man.get("edge_key", ""),
+            "cf_source": man.get("cf_source", ""),
+            "held_out_test_mae": f"{met.get('test_mae', float('nan')):.4f}",
+            "served_variant": man.get("served_variant", "train_split_checkpoint"),
+            "t_index_policy": man.get("t_index_policy", "")[:250],
+            "limitation_basis": (
+                "Tier 2 is scored on overlapping-window predictions; not "
+                "directly comparable with the Tier 1 MAE until compare_tiers "
+                "runs both through predict_grid"),
+        })
+    return common
+
+
+def register(model_data_url: str | None = None, notes: str = "",
+             model: str = "oracle-ripple") -> str:
     sm = _sm()
-    man = _manifest()
-    url = model_data_url or f"s3://{BUCKET}/{MODEL_KEY}"
+    fam = _fam(model)
+    man = _manifest(model)
+    url = model_data_url or f"s3://{BUCKET}/{fam['key']}"
 
     try:
         sm.create_model_package_group(
-            ModelPackageGroupName=GROUP,
-            ModelPackageGroupDescription=(
-                "Oracle Park game-evening ripple. Tier 1 LightGBM counterfactual "
-                "on log1p(person-hours) at 250m cell-hour grain, plus a "
-                "canonical-ring difference-in-differences effect layer."),
+            ModelPackageGroupName=fam["group"],
+            ModelPackageGroupDescription=fam["group_desc"],
         )
-        print(f"  created model package group {GROUP}", flush=True)
+        print(f"  created model package group {fam['group']}", flush=True)
     except Exception as e:
         # SageMaker raises ValidationException with "already exists" here, NOT
         # ResourceInUse, so catching the typed exception silently does nothing.
@@ -123,13 +208,11 @@ def register(model_data_url: str | None = None, notes: str = "") -> str:
             raise
 
     eff = json.loads(
-        (settings.data_dir / "serve_artifacts" / "effects.json").read_text())
-    core = next(b for b in eff["bands"] if b["id"] == "b1")
+        (settings.data_dir / fam["artifact_dir"] / "effects.json").read_text())
 
     resp = sm.create_model_package(
-        ModelPackageGroupName=GROUP,
-        ModelPackageDescription=(notes or
-                                 "Tier 1 GBM counterfactual + canonical-ring effect layer"),
+        ModelPackageGroupName=fam["group"],
+        ModelPackageDescription=(notes or fam["group_desc"][:160]),
         InferenceSpecification={
             "Containers": [{
                 "Image": IMAGE,
@@ -142,54 +225,34 @@ def register(model_data_url: str | None = None, notes: str = "") -> str:
             "SupportedTransformInstanceTypes": [INSTANCE],
         },
         ModelApprovalStatus="PendingManualApproval",
-        CustomerMetadataProperties=_meta_safe({
-            "target": "person_hours",
-            "objective": "l2_on_log1p",
-            "measure": "visitor_hours",
-            "evening_hours": "16-23",
-            "held_out_test_mae": "0.9185",
-            "held_out_test_r2": "0.7568",
-            "served_variant": "full_control_all_splits",
-            "training_window": "/".join(man["training_window"]),
-            "serve_window": "/".join(man["serve_window"]),
-            "observed_panel_through": man["observed_panel_through"],
-            "effect_window": "/".join(eff["effect_window"]),
-            "core_ring_lift_pct": f"{core['lift_pct']:.2f}",
-            "n_cells": str(man["n_cells"]),
-            "featurespec_sha256": man["featurespec_sha256"][:16],
-            "limitation_core_ring": "0-250m ring is one 250m cell with 27 POIs",
-            "limitation_projected": (
-                f"dates after {man['observed_panel_through']} are forward-projected"),
-            "limitation_far_band": "beyond-5km band not distinguishable from zero "
-                                   "and ships as zero",
-            "limitation_window": "effects are evening-only 16-23 and must not be "
-                                 "applied to a whole day",
-        }),
+        CustomerMetadataProperties=_meta_safe(_metadata(model, man, eff)),
     )
     arn = resp["ModelPackageArn"]
     print(f"  registered {arn}\n  status: PendingManualApproval", flush=True)
     return arn
 
 
-def latest_package(status: str | None = None) -> str:
+def latest_package(status: str | None = None, model: str = "oracle-ripple") -> str:
     sm = _sm()
-    kw = {"ModelPackageGroupName": GROUP, "SortBy": "CreationTime",
+    group = _fam(model)["group"]
+    kw = {"ModelPackageGroupName": group, "SortBy": "CreationTime",
           "SortOrder": "Descending", "MaxResults": 10}
     if status:
         kw["ModelApprovalStatus"] = status
     got = sm.list_model_packages(**kw)["ModelPackageSummaryList"]
     if not got:
-        raise RuntimeError(f"no model packages in {GROUP}"
+        raise RuntimeError(f"no model packages in {group}"
                            + (f" with status {status}" if status else ""))
     return got[0]["ModelPackageArn"]
 
 
-def approve(arn: str | None = None, note: str = "") -> None:
+def approve(arn: str | None = None, note: str = "",
+            model: str = "oracle-ripple") -> None:
     """The gate. A person runs this, with a reason, as its own deliberate step."""
     if not note:
         raise SystemExit("--note is required: the gate is a decision, so record it")
     sm = _sm()
-    arn = arn or latest_package("PendingManualApproval")
+    arn = arn or latest_package("PendingManualApproval", model)
     sm.update_model_package(ModelPackageArn=arn, ModelApprovalStatus="Approved",
                             ApprovalDescription=note)
     print(f"  approved {arn}\n  note: {note}", flush=True)
@@ -198,17 +261,20 @@ def approve(arn: str | None = None, note: str = "") -> None:
 # ---------------------------------------------------------------- deploy
 
 
-def endpoint(arn: str | None = None, wait: bool = True) -> str:
+def endpoint(arn: str | None = None, wait: bool = True,
+             model: str = "oracle-ripple") -> str:
     import datetime as dt
 
     sm = _sm()
-    arn = arn or latest_package("Approved")
+    fam = _fam(model)
+    ep = fam["endpoint"]
+    arn = arn or latest_package("Approved", model)
     d = sm.describe_model_package(ModelPackageName=arn)
     if d["ModelApprovalStatus"] != "Approved":
         raise RuntimeError(f"promotion gate not passed: {d['ModelApprovalStatus']}")
 
     stamp = dt.datetime.now(dt.timezone.utc).strftime("%Y%m%d-%H%M%S")
-    model_name = f"eia-oracle-ripple-{stamp}"
+    model_name = f"eia-{model}-{stamp}"
     sm.create_model(
         ModelName=model_name,
         PrimaryContainer={"ModelPackageName": arn},
@@ -216,7 +282,7 @@ def endpoint(arn: str | None = None, wait: bool = True) -> str:
         Tags=TAGS,
     )
 
-    cfg = f"{ENDPOINT}-cfg-{stamp}"
+    cfg = f"{ep}-cfg-{stamp}"
     sm.create_endpoint_config(
         EndpointConfigName=cfg,
         ProductionVariants=[{
@@ -232,115 +298,125 @@ def endpoint(arn: str | None = None, wait: bool = True) -> str:
         DataCaptureConfig={
             "EnableCapture": True,
             "InitialSamplingPercentage": 100,
-            "DestinationS3Uri": f"s3://{BUCKET}/eia-nowcast/capture/{ENDPOINT}/",
+            "DestinationS3Uri": f"s3://{BUCKET}/eia-nowcast/capture/{ep}/",
             "CaptureOptions": [{"CaptureMode": "Input"}, {"CaptureMode": "Output"}],
         },
         Tags=TAGS,
     )
 
     existing = {e["EndpointName"]
-                for e in sm.list_endpoints(NameContains=ENDPOINT)["Endpoints"]}
-    if ENDPOINT in existing:
-        sm.update_endpoint(EndpointName=ENDPOINT, EndpointConfigName=cfg)
-        print(f"  updating {ENDPOINT} -> {cfg} (blue/green)", flush=True)
+                for e in sm.list_endpoints(NameContains=ep)["Endpoints"]}
+    if ep in existing:
+        sm.update_endpoint(EndpointName=ep, EndpointConfigName=cfg)
+        print(f"  updating {ep} -> {cfg} (blue/green)", flush=True)
     else:
-        sm.create_endpoint(EndpointName=ENDPOINT, EndpointConfigName=cfg, Tags=TAGS)
-        print(f"  creating {ENDPOINT} -> {cfg}", flush=True)
+        sm.create_endpoint(EndpointName=ep, EndpointConfigName=cfg, Tags=TAGS)
+        print(f"  creating {ep} -> {cfg}", flush=True)
 
     if wait:
         print("  waiting for InService (up to 20 min) ...", flush=True)
         try:
             sm.get_waiter("endpoint_in_service").wait(
-                EndpointName=ENDPOINT, WaiterConfig={"Delay": 30, "MaxAttempts": 40})
+                EndpointName=ep, WaiterConfig={"Delay": 30, "MaxAttempts": 40})
         except Exception:
-            desc = sm.describe_endpoint(EndpointName=ENDPOINT)
+            desc = sm.describe_endpoint(EndpointName=ep)
             raise RuntimeError(
                 f"endpoint is {desc['EndpointStatus']}: "
                 f"{desc.get('FailureReason', 'no reason given')}"
             )
-    ep_arn = f"arn:aws:sagemaker:{REGION}:{ACCOUNT}:endpoint/{ENDPOINT}"
+    ep_arn = f"arn:aws:sagemaker:{REGION}:{ACCOUNT}:endpoint/{ep}"
     print(f"  InService: {ep_arn}", flush=True)
     return ep_arn
 
 
 def status() -> None:
     sm = _sm()
-    try:
-        pkgs = sm.list_model_packages(
-            ModelPackageGroupName=GROUP, SortBy="CreationTime",
-            SortOrder="Descending", MaxResults=5)["ModelPackageSummaryList"]
-    except Exception:
-        pkgs = []
-    print("model packages:")
-    for p in pkgs:
-        print(f"  v{p['ModelPackageVersion']:<3} {p['ModelApprovalStatus']:<22} "
-              f"{p['CreationTime']:%Y-%m-%d %H:%M}")
+    for model, fam in FAMILIES.items():
+        try:
+            pkgs = sm.list_model_packages(
+                ModelPackageGroupName=fam["group"], SortBy="CreationTime",
+                SortOrder="Descending", MaxResults=5)["ModelPackageSummaryList"]
+        except Exception:
+            pkgs = []
+        print(f"model packages ({fam['group']}):")
+        for p in pkgs:
+            print(f"  v{p['ModelPackageVersion']:<3} {p['ModelApprovalStatus']:<22} "
+                  f"{p['CreationTime']:%Y-%m-%d %H:%M}")
+        if not pkgs:
+            print("  (none)")
     print("endpoints:")
     for e in sm.list_endpoints()["Endpoints"]:
-        print(f"  {e['EndpointName']:<36} {e['EndpointStatus']}")
+        print(f"  {e['EndpointName']:<40} {e['EndpointStatus']}")
 
 
-def teardown() -> None:
+def teardown(model: str = "oracle-ripple") -> None:
     sm = _sm()
-    sm.delete_endpoint(EndpointName=ENDPOINT)
-    print(f"  deleted endpoint {ENDPOINT} (config and model kept)", flush=True)
+    ep = _fam(model)["endpoint"]
+    sm.delete_endpoint(EndpointName=ep)
+    print(f"  deleted endpoint {ep} (config and model kept)", flush=True)
 
 
-def grant_invoke(user: str = "venue-economics-invoke") -> None:
-    """One action, one resource ARN. No wildcard, no Describe, no S3."""
+def grant_invoke(user: str = "venue-economics-invoke",
+                 model: str = "oracle-ripple") -> None:
+    """One action, one resource ARN per policy. No wildcard, no Describe, no S3."""
     import boto3
 
+    ep = _fam(model)["endpoint"]
     doc = {
         "Version": "2012-10-17",
         "Statement": [{
             "Sid": "InvokeOracleRippleEndpointOnly",
             "Effect": "Allow",
             "Action": "sagemaker:InvokeEndpoint",
-            "Resource": f"arn:aws:sagemaker:{REGION}:{ACCOUNT}:endpoint/{ENDPOINT}",
+            "Resource": f"arn:aws:sagemaker:{REGION}:{ACCOUNT}:endpoint/{ep}",
         }],
     }
     boto3.client("iam").put_user_policy(
         UserName=user,
-        PolicyName=f"invoke-{ENDPOINT}",
+        PolicyName=f"invoke-{ep}",
         PolicyDocument=json.dumps(doc),
     )
-    print(f"  granted {user} sagemaker:InvokeEndpoint on {ENDPOINT} only", flush=True)
+    print(f"  granted {user} sagemaker:InvokeEndpoint on {ep} only", flush=True)
 
 
 def main(argv=None) -> None:
     import argparse
 
+    common = argparse.ArgumentParser(add_help=False)
+    common.add_argument("--model", default="oracle-ripple",
+                        choices=sorted(FAMILIES))
+
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     sub = ap.add_subparsers(dest="cmd", required=True)
-    sub.add_parser("upload")
-    r = sub.add_parser("register")
+    sub.add_parser("upload", parents=[common])
+    r = sub.add_parser("register", parents=[common])
     r.add_argument("--notes", default="")
-    a = sub.add_parser("approve")
+    a = sub.add_parser("approve", parents=[common])
     a.add_argument("--note", default="")
     a.add_argument("--arn", default=None)
-    e = sub.add_parser("endpoint")
+    e = sub.add_parser("endpoint", parents=[common])
     e.add_argument("--arn", default=None)
     e.add_argument("--no-wait", action="store_true")
     sub.add_parser("status")
-    sub.add_parser("teardown")
-    g = sub.add_parser("grant-invoke")
+    sub.add_parser("teardown", parents=[common])
+    g = sub.add_parser("grant-invoke", parents=[common])
     g.add_argument("--user", default="venue-economics-invoke")
     n = ap.parse_args(argv)
 
     if n.cmd == "upload":
-        upload()
+        upload(model=n.model)
     elif n.cmd == "register":
-        register(notes=n.notes)
+        register(notes=n.notes, model=n.model)
     elif n.cmd == "approve":
-        approve(n.arn, n.note)
+        approve(n.arn, n.note, model=n.model)
     elif n.cmd == "endpoint":
-        endpoint(n.arn, wait=not n.no_wait)
+        endpoint(n.arn, wait=not n.no_wait, model=n.model)
     elif n.cmd == "status":
         status()
     elif n.cmd == "teardown":
-        teardown()
+        teardown(model=n.model)
     elif n.cmd == "grant-invoke":
-        grant_invoke(n.user)
+        grant_invoke(n.user, model=n.model)
 
 
 if __name__ == "__main__":  # pragma: no cover

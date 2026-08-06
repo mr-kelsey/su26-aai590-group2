@@ -52,8 +52,6 @@ MEASURE = {"id": "visitor_hours", "noun": "visitor-hours"}
 
 
 def model_fn(model_dir):
-    import lightgbm as lgb
-
     t0 = time.time()
     a = os.path.join(model_dir, "artifacts")
     if not os.path.isdir(a):
@@ -64,15 +62,14 @@ def model_fn(model_dir):
             return json.load(f)
 
     man = _json("manifest.json")
-    booster = lgb.Booster(model_file=os.path.join(model_dir, "model.txt"))
-    cats = booster.pandas_categorical[0]
-
+    # Which counterfactual source this tarball carries. "gbm" (the default, and
+    # what every manifest before this key existed implicitly was) runs the
+    # LightGBM booster per request; "grid" looks the counterfactual up in a
+    # precomputed array laid out on the SAME row-index contract. The grid is
+    # exactly as live as the booster: both are deterministic functions of baked
+    # artifacts, the forward pass just ran at build time instead.
+    cf_source = man.get("cf_source", "gbm")
     units = _json("unit_ids.json")
-    if list(cats) != list(range(1, len(units) + 1)):
-        raise RuntimeError(
-            "booster categories are not 1..%d; the unit_code map is not what the "
-            "serve path assumes" % len(units)
-        )
 
     with open(os.path.join(os.path.dirname(os.path.abspath(__file__)),
                            "featurespec.py"), "rb") as f:
@@ -84,23 +81,15 @@ def model_fn(model_dir):
         )
 
     cells = np.load(os.path.join(a, "cells.npz"))
-    timefeat = np.load(os.path.join(a, "timefeat.npz"))
-    poi = np.load(os.path.join(a, "poi_live.npz"))
-    roll = np.load(os.path.join(a, "roll.npz"))
     dates = _json("dates.json")
     eff = _json("effects.json")
 
     ctx = {
         "manifest": man,
-        "booster": booster,
-        "cats": cats,
+        "cf_source": cf_source,
         "units": units,
         "unit_index": {u: i for i, u in enumerate(units)},
         "cells": {k: cells[k] for k in cells.files},
-        "timefeat": {k: timefeat[k] for k in timefeat.files},
-        "poi_live": poi["n_poi_live"],
-        "poi_held": poi["held"],
-        "roll": {k: roll[k] for k in roll.files},
         "dates": dates,
         "date_index": {d["date"]: i for i, d in enumerate(dates)},
         "effects": eff,
@@ -109,14 +98,61 @@ def model_fn(model_dir):
         "hour0": man["evening_hours"][0],
         "band_of": [fs.band_of(float(d), eff["bands"]) for d in cells["dist_venue_m"]],
     }
+
+    if cf_source == "gbm":
+        import lightgbm as lgb
+
+        booster = lgb.Booster(model_file=os.path.join(model_dir, "model.txt"))
+        cats = booster.pandas_categorical[0]
+        if list(cats) != list(range(1, len(units) + 1)):
+            raise RuntimeError(
+                "booster categories are not 1..%d; the unit_code map is not what "
+                "the serve path assumes" % len(units)
+            )
+        timefeat = np.load(os.path.join(a, "timefeat.npz"))
+        poi = np.load(os.path.join(a, "poi_live.npz"))
+        roll = np.load(os.path.join(a, "roll.npz"))
+        ctx.update({
+            "booster": booster,
+            "cats": cats,
+            "timefeat": {k: timefeat[k] for k in timefeat.files},
+            "poi_live": poi["n_poi_live"],
+            "poi_held": poi["held"],
+            "roll": {k: roll[k] for k in roll.files},
+        })
+    elif cf_source == "grid":
+        grid = np.load(os.path.join(a, "cf_grid.npz"))["cf_log"]
+        n_rows = len(dates) * ctx["n_hours"] * ctx["n_cells"]
+        if grid.shape != (n_rows,):
+            raise RuntimeError(
+                "cf_grid has %s rows, the date x hour x cell contract needs %d"
+                % (grid.shape, n_rows)
+            )
+        ctx["cf_grid"] = grid
+    else:
+        raise RuntimeError("unknown cf_source %r" % cf_source)
+
     _check_golden(a, ctx)
-    print("model_fn ready in %.1fs (%d cells, %d dates)"
-          % (time.time() - t0, ctx["n_cells"], len(dates)), flush=True)
+    print("model_fn ready in %.1fs (%s, %d cells, %d dates)"
+          % (time.time() - t0, cf_source, ctx["n_cells"], len(dates)), flush=True)
     return ctx
 
 
 def _check_golden(a, ctx):
-    g = np.load(os.path.join(a, "golden.npz"))
+    g = np.load(os.path.join(a, "golden.npz"), allow_pickle=False)
+    if ctx["cf_source"] == "grid":
+        # Index half: recompute the row index from its components and demand
+        # exact float32 equality on the lookup. A wrong stride, a transposed
+        # reshape, or a shifted hour origin all fail here, at startup.
+        rows = ((g["date_idx"] * ctx["n_hours"] + (g["hour"] - ctx["hour0"]))
+                * ctx["n_cells"] + (g["unit_code"] - 1))
+        np.testing.assert_array_equal(rows, g["row"])
+        np.testing.assert_array_equal(ctx["cf_grid"][rows], g["cf_log"])
+        # Effect half: the part that still runs real code in the container.
+        eff = fs.effect_log(g["eff_dist"], g["eff_band"].astype(object),
+                            g["eff_att"], g["eff_night"], ctx["effects"])
+        np.testing.assert_allclose(eff, g["eff_log"], atol=1e-12)
+        return
     cats = np.asarray(ctx["cats"])
     cols = {}
     for f in fs.FEATURES:
@@ -221,31 +257,40 @@ def predict_fn(req, ctx):
     lo = di * n_h * n_c
     hi = lo + n_h * n_c
     sl = slice(lo, hi)
-
-    # cell statics tile across hours; time features repeat across cells
     cellsd = ctx["cells"]
-    tf = ctx["timefeat"]
-    tlo = di * n_h
-    thi = tlo + n_h
     tile = lambda v: np.tile(np.asarray(v), n_h)                       # noqa: E731
-    rep = lambda v: np.repeat(np.asarray(v)[tlo:thi], n_c)             # noqa: E731
 
-    cols = {
-        "unit_code": tile(np.arange(1, n_c + 1)),
-        "base_k2": ctx["roll"]["base_k2"][sl],
-        "base_k4": ctx["roll"]["base_k4"][sl],
-        "base_cap120": ctx["roll"]["base_cap120"][sl],
-        "n_cap120": ctx["roll"]["n_cap120"][sl],
-        "n_poi_live": tile(ctx["poi_live"][di]),
-    }
-    for f in ("hour", "dow", "month", "t_index", "temp_hr", "prcp_hr", "wind_hr",
-              "us_federal_holiday"):
-        cols[f] = rep(tf[f])
-    for f in ("n_poi", "food_share", "dist_venue_m", "bearing_venue_deg"):
-        cols[f] = tile(cellsd[f])
+    if ctx["cf_source"] == "grid":
+        cf_log = ctx["cf_grid"][sl].astype(np.float64)
+        if not np.isfinite(cf_log).all():
+            # the first serve date has no convolution context behind it and was
+            # deliberately left NaN rather than predicted from a cold start
+            raise BadRequest(
+                "date %s has no precomputed counterfactual for this model" % date
+            )
+    else:
+        # cell statics tile across hours; time features repeat across cells
+        tf = ctx["timefeat"]
+        tlo = di * n_h
+        thi = tlo + n_h
+        rep = lambda v: np.repeat(np.asarray(v)[tlo:thi], n_c)         # noqa: E731
 
-    X = fs.build_X(cols, ctx["cats"])
-    cf_log = fs.predict_cf(ctx["booster"], X)
+        cols = {
+            "unit_code": tile(np.arange(1, n_c + 1)),
+            "base_k2": ctx["roll"]["base_k2"][sl],
+            "base_k4": ctx["roll"]["base_k4"][sl],
+            "base_cap120": ctx["roll"]["base_cap120"][sl],
+            "n_cap120": ctx["roll"]["n_cap120"][sl],
+            "n_poi_live": tile(ctx["poi_live"][di]),
+        }
+        for f in ("hour", "dow", "month", "t_index", "temp_hr", "prcp_hr",
+                  "wind_hr", "us_federal_holiday"):
+            cols[f] = rep(tf[f])
+        for f in ("n_poi", "food_share", "dist_venue_m", "bearing_venue_deg"):
+            cols[f] = tile(cellsd[f])
+
+        X = fs.build_X(cols, ctx["cats"])
+        cf_log = fs.predict_cf(ctx["booster"], X)
 
     dist = tile(cellsd["dist_venue_m"])
     bands = tile(np.asarray(ctx["band_of"], dtype=object))

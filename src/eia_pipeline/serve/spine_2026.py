@@ -375,17 +375,23 @@ def build_spine_serve(con=None) -> Path:
     return dest
 
 
-def build_cell_hour_serve(con=None) -> Path:
-    """Dense cell x date x hour person-hours over the FULL serve window, evening only.
+def build_cell_hour_serve(con=None, hours: tuple = EVENING, suffix: str = "") -> Path:
+    """Dense cell x date x hour person-hours over the FULL serve window.
 
-    Restricted to EVENING because the rolling-baseline windows partition by hour,
-    so dropping the other 16 hours changes nothing about the evening baselines and
-    cuts the table by 3x. verify() proves that equivalence against the training
-    baseline rather than asserting it.
+    Default is EVENING only, because the rolling-baseline windows partition by
+    hour, so dropping the other 16 hours changes nothing about the evening
+    baselines and cuts the table by 3x. verify() proves that equivalence against
+    the training baseline rather than asserting it.
+
+    hours=(0, 23), suffix="_24" builds the parallel 24-hour panel the served
+    STGNN needs: its causal convolution learned a 24-hour clock and consumes
+    48-hour windows, so it cannot be fed the evening slice. Same SQL, same
+    invariants; verify(suffix="_24", hours=(0, 23)) checks the full-day overlap
+    against the training baseline.
     """
     con = con or duckdb_s3()
-    dest = settings.data_dir / "bronze_sf" / "cell_hour_serve.parquet"
-    lo, hi = EVENING
+    dest = settings.data_dir / "bronze_sf" / f"cell_hour_serve{suffix}.parquet"
+    lo, hi = hours
     con.execute(
         f"""
         COPY (
@@ -411,11 +417,11 @@ def build_cell_hour_serve(con=None) -> Path:
         """
     )
     n = con.execute(f"SELECT count(*) FROM read_parquet('{dest}')").fetchone()[0]
-    print(f"  cell_hour_serve: {n:,} rows -> {dest.name}", flush=True)
+    print(f"  cell_hour_serve{suffix}: {n:,} rows -> {dest.name}", flush=True)
     return dest
 
 
-def build_model_hour_serve(con=None) -> Path:
+def build_model_hour_serve(con=None, suffix: str = "") -> Path:
     """cell_hour_serve x cell_dim x spine_serve, plus n_poi_live carried forward.
 
     n_poi_live is real through the last ISO week the panel covers and held at each
@@ -424,7 +430,7 @@ def build_model_hour_serve(con=None) -> Path:
     cell went dark, which is a much larger lie than a stale count.
     """
     con = con or duckdb_s3()
-    dest = settings.data_dir / "bronze_sf" / "model_hour_serve.parquet"
+    dest = settings.data_dir / "bronze_sf" / f"model_hour_serve{suffix}.parquet"
     base = settings.data_dir / "bronze_sf"
     con.execute(
         f"""
@@ -450,7 +456,7 @@ def build_model_hour_serve(con=None) -> Path:
                    sp.chase_day, sp.moscone_day, sp.citywide_day, sp.street_fair_day,
                    sp.clean_control_strict, sp.split, sp.observed,
                    sp.weather_source, sp.attendance_pred
-            FROM read_parquet('{base}/cell_hour_serve.parquet') ch
+            FROM read_parquet('{base}/cell_hour_serve{suffix}.parquet') ch
             JOIN {CELL_DIM} cd USING (unit_id)
             JOIN read_parquet('{base}/spine_serve.parquet') sp USING (date, hour)
             LEFT JOIN cov ON cov.unit_id = ch.unit_id
@@ -463,12 +469,12 @@ def build_model_hour_serve(con=None) -> Path:
         f"""SELECT count(*), count(*) FILTER (WHERE n_poi_live_held)
             FROM read_parquet('{dest}')"""
     ).fetchone()
-    print(f"  model_hour_serve: {n:,} rows ({100 * held / n:.1f}% n_poi_live held) "
+    print(f"  model_hour_serve{suffix}: {n:,} rows ({100 * held / n:.1f}% n_poi_live held) "
           f"-> {dest.name}", flush=True)
     return dest
 
 
-def build_rolling_baseline_serve(con=None) -> Path:
+def build_rolling_baseline_serve(con=None, suffix: str = "") -> Path:
     """The three rolling baselines over the serve window.
 
     Same SQL as features.build_rolling_baseline_multi with exactly two changes:
@@ -481,7 +487,7 @@ def build_rolling_baseline_serve(con=None) -> Path:
     trailing means and drag every later baseline toward zero.
     """
     con = con or duckdb_s3()
-    dest = settings.data_dir / "bronze_sf" / "rolling_baseline_serve.parquet"
+    dest = settings.data_dir / "bronze_sf" / f"rolling_baseline_serve{suffix}.parquet"
     base = settings.data_dir / "bronze_sf"
     con.execute(
         f"""
@@ -489,7 +495,7 @@ def build_rolling_baseline_serve(con=None) -> Path:
             WITH panel AS (
                 SELECT unit_id, date, hour, dow,
                        ln(1 + person_hours) AS y, clean_control_strict, observed
-                FROM read_parquet('{base}/model_hour_serve.parquet')
+                FROM read_parquet('{base}/model_hour_serve{suffix}.parquet')
             ),
             ctl AS (
                 SELECT unit_id, date, hour, dow,
@@ -522,16 +528,22 @@ def build_rolling_baseline_serve(con=None) -> Path:
         f"""SELECT count(*), count(*) FILTER (WHERE base_k2 IS NULL)
             FROM read_parquet('{dest}')"""
     ).fetchone()
-    print(f"  rolling_baseline_serve: {n:,} rows, {miss:,} null ({100 * miss / n:.1f}% "
+    print(f"  rolling_baseline_serve{suffix}: {n:,} rows, {miss:,} null ({100 * miss / n:.1f}% "
           f"warm-up) -> {dest.name}", flush=True)
     return dest
 
 
-def verify(con=None) -> None:
-    """Prove the extension did not disturb the training window."""
+def verify(con=None, suffix: str = "", hours: tuple = EVENING) -> None:
+    """Prove the extension did not disturb the training window.
+
+    For the 24-hour variant (suffix="_24", hours=(0, 23)) check 3 is strictly
+    STRONGER than the evening one: rolling_baseline.parquet is itself 24-hour and
+    every 2023-2025 row is observed, so the rebuild must reproduce it bit for bit
+    across all 24 hours, not just the evening 8.
+    """
     con = con or duckdb_s3()
     base = settings.data_dir / "bronze_sf"
-    lo, hi = EVENING
+    lo, hi = hours
     problems = []
 
     # 1. no extension row carries a split label
@@ -560,14 +572,14 @@ def verify(con=None) -> None:
                max(abs(COALESCE(a.base_cap120,-9) - COALESCE(b.base_cap120,-9))),
                max(abs(COALESCE(a.n_cap120,-9) - COALESCE(b.n_cap120,-9)))
         FROM read_parquet('{base}/rolling_baseline.parquet') a
-        JOIN read_parquet('{base}/rolling_baseline_serve.parquet') b
+        JOIN read_parquet('{base}/rolling_baseline_serve{suffix}.parquet') b
           USING (unit_id, date, hour)
         WHERE a.date <= DATE '{PANEL_END}' AND a.hour BETWEEN {lo} AND {hi}
         """
     ).fetchone()
     n_overlap, d_k2, d_cap, d_n = diff
     n_days = (date.fromisoformat(PANEL_END) - date.fromisoformat(SERVE_START)).days + 1
-    expected = 452 * (EVENING[1] - EVENING[0] + 1) * n_days
+    expected = 452 * (hi - lo + 1) * n_days
     if n_overlap == 0:
         problems.append("no overlap rows joined; the keys do not line up")
     for name, d in (("base_k2", d_k2), ("base_cap120", d_cap), ("n_cap120", d_n)):
@@ -578,7 +590,7 @@ def verify(con=None) -> None:
     a, b = con.execute(
         f"""SELECT (SELECT count(DISTINCT unit_id) FROM {CELL_DIM}),
                    (SELECT count(DISTINCT unit_id)
-                    FROM read_parquet('{base}/model_hour_serve.parquet'))"""
+                    FROM read_parquet('{base}/model_hour_serve{suffix}.parquet'))"""
     ).fetchone()
     if a != b:
         problems.append(f"model_hour_serve has {b} cells, cell_dim has {a}")
@@ -605,5 +617,32 @@ def build_all(con=None) -> None:
         print(f"  ({time.perf_counter() - t0:.1f}s)", flush=True)
 
 
+def build_all_24(con=None) -> None:
+    """The parallel 24-hour serve panel for the served STGNN.
+
+    spine_serve.parquet is already 24-hour and is shared; only the three
+    cell-grain tables get the _24 variant. Requires spine_serve to exist
+    (run build_all first, or at least build_spine_serve).
+    """
+    con = con or duckdb_s3()
+    import time
+
+    for name, fn in (
+            ("cell_hour_serve_24",
+             lambda c: build_cell_hour_serve(c, hours=(0, 23), suffix="_24")),
+            ("model_hour_serve_24",
+             lambda c: build_model_hour_serve(c, suffix="_24")),
+            ("rolling_baseline_serve_24",
+             lambda c: build_rolling_baseline_serve(c, suffix="_24")),
+            ("verify_24",
+             lambda c: verify(c, suffix="_24", hours=(0, 23)))):
+        t0 = time.perf_counter()
+        print(f"[{name}]", flush=True)
+        fn(con)
+        print(f"  ({time.perf_counter() - t0:.1f}s)", flush=True)
+
+
 if __name__ == "__main__":  # pragma: no cover
-    build_all()
+    import sys
+
+    build_all_24() if "--24" in sys.argv else build_all()

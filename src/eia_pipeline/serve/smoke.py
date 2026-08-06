@@ -51,6 +51,24 @@ def load_handler(model_dir: Path):
     return inference
 
 
+def index_check_grid(model_dir: Path, ctx, dates) -> float:
+    """The grid-source counterpart of index_check: two independent arithmetic
+    routes to the same counterfactual. The handler slices the flat array by
+    offset formula; here we reshape it to (n_dates, n_hours, n_cells) and index
+    by components. A wrong stride or transposed layout disagrees immediately."""
+    a = model_dir / "artifacts"
+    grid = np.load(a / "cf_grid.npz")["cf_log"]
+    n_c, n_h = ctx["n_cells"], ctx["n_hours"]
+    cube = grid.reshape(-1, n_h, n_c)
+    worst = 0.0
+    for d in dates:
+        di = ctx["date_index"][d]
+        got = ctx["cf_grid"][di * n_h * n_c:(di + 1) * n_h * n_c]
+        want = cube[di].ravel()
+        worst = max(worst, float(np.abs(want - got).max()))
+    return worst
+
+
 def index_check(inf, ctx, dates, con=None) -> float:
     """Rebuild the handler's feature rows from parquet and compare counterfactuals.
 
@@ -136,19 +154,47 @@ def summarize(tag: str, r: dict) -> None:
     print(f"  cells={len(r['cells'])}  {r['diagnostics']['total_ms']}ms")
 
 
+def write_fixtures(dest: str, prefix: str, responses: dict) -> None:
+    """Record real handler responses as website test fixtures.
+
+    PLUG-IN-ENDPOINT.md documents the fixtures as recorded-not-handwritten;
+    this is the recorder. Names mirror the existing set:
+    {prefix}-played-night.json / {prefix}-projected-2026.json /
+    {prefix}-no-game.json.
+    """
+    out = Path(dest)
+    out.mkdir(parents=True, exist_ok=True)
+    names = {"played": "played-night", "projected": "projected-2026",
+             "no game": "no-game"}
+    for tag, name in names.items():
+        p = out / f"{prefix}-{name}.json"
+        p.write_text(json.dumps(responses[tag], indent=2) + "\n")
+        print(f"  fixture -> {p}", flush=True)
+
+
 def main(argv=None) -> None:
     import argparse
 
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--tarball", default=None)
+    ap.add_argument("--model", default="oracle-ripple",
+                    choices=("oracle-ripple", "oracle-ripple-stgnn"))
     ap.add_argument("--endpoint", default=None,
                     help="also invoke this live SageMaker endpoint and diff")
+    ap.add_argument("--write-fixtures", default=None, metavar="DIR",
+                    help="record the responses as website test fixtures")
+    ap.add_argument("--fixture-prefix", default=None,
+                    help="fixture filename prefix (default: endpoint or "
+                         "endpoint-stgnn by --model)")
     a = ap.parse_args(argv)
 
+    if a.tarball is None and a.model == "oracle-ripple-stgnn":
+        a.tarball = settings.data_dir / "dist" / "model-stgnn.tar.gz"
     d = extract(a.tarball)
     print(f"extracted -> {d}")
     inf = load_handler(d)
     ctx = inf.model_fn(str(d))
+    is_grid = ctx.get("cf_source") == "grid"
 
     # 2025-08-15 is a real home game with a REAL attendance (34,172). Do not use a
     # date the Giants were away on: it silently exercises the no-game path and
@@ -162,19 +208,28 @@ def main(argv=None) -> None:
                    ("no game", r_none), ("far pin", r_far)):
         summarize(tag, r)
 
-    print("\n=== index check: handler assembly vs parquet ===")
-    worst = index_check(inf, ctx, [played, projected, nogame])
+    if is_grid:
+        print("\n=== index check: handler slice vs reshaped grid ===")
+        worst = index_check_grid(d, ctx, [played, projected, nogame])
+    else:
+        print("\n=== index check: handler assembly vs parquet ===")
+        worst = index_check(inf, ctx, [played, projected, nogame])
     print(f"  max |delta| on counterfactuals: {worst:.3g}  "
           f"-> {'PASS' if worst < 1e-9 else 'FAIL'}")
 
     print("\n=== invariants ===")
+    # which bands the effect layer itself says are indistinguishable from zero;
+    # asserting b6 by name would break the moment another model's b6 clears its CI
+    insig = [b["id"] for b in ctx["effects"]["bands"]
+             if not b.get("significant", True)]
     checks = [
         ("no-game date has zero lift", all(x["lift_pct"] == 0 for x in r_none["bands"])),
         ("no-game date still has a real counterfactual",
          r_none["focus"]["counterfactual"] > 0),
         ("far pin is outside", r_far["focus"]["outside"] is True),
-        ("beyond-5km band suppressed",
-         next(x for x in r_played["bands"] if x["id"] == "b6")["lift_pct"] == 0.0),
+        (f"insignificant bands ship as zero ({','.join(insig) or 'none'})",
+         all(x["lift_pct"] == 0.0
+             for x in r_played["bands"] if x["id"] in insig)),
         ("projected date flagged", r_proj["basis"]["projected"] is True),
         ("played date not flagged", r_played["basis"]["projected"] is False),
         ("measure is visitor_hours", r_played["measure"]["id"] == "visitor_hours"),
@@ -211,6 +266,21 @@ def main(argv=None) -> None:
         raise SystemExit("FAIL: out-of-window date was accepted")
     except inf.BadRequest:
         print("  PASS  out-of-window date rejected")
+    if is_grid:
+        # the first serve date has no convolution context and stays NaN in the
+        # grid; the handler must refuse it rather than serialize NaN
+        try:
+            call(inf, ctx, date="2023-01-02", lat=37.78, lon=-122.39)
+            raise SystemExit("FAIL: context-less first date was accepted")
+        except inf.BadRequest:
+            print("  PASS  context-less first date rejected")
+
+    if a.write_fixtures:
+        prefix = a.fixture_prefix or (
+            "endpoint-stgnn" if a.model == "oracle-ripple-stgnn" else "endpoint")
+        write_fixtures(a.write_fixtures, prefix,
+                       {"played": r_played, "projected": r_proj,
+                        "no game": r_none})
 
     if a.endpoint:
         _diff_endpoint(a.endpoint, [(played, 37.7801, -122.3894),

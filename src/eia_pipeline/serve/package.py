@@ -98,7 +98,13 @@ def build_tarball(artifact_dir: Path | None = None, dest: Path | None = None,
     man = json.loads((art / "manifest.json").read_text())
     if model_version:
         man["model_version"] = model_version
-    man["lightgbm_version"] = LIGHTGBM_VERSION
+    cf_source = man.get("cf_source", "gbm")
+    if cf_source == "gbm":
+        man["lightgbm_version"] = LIGHTGBM_VERSION
+    elif not man.get("model_version"):
+        # the GBM fallback in inference.py names itself "gbm-..."; a grid
+        # tarball without an explicit version would masquerade as the GBM
+        raise RuntimeError("cf_source=grid tarballs require --model-version")
 
     for p in sorted(art.glob("*")):
         if p.name == "model.txt":
@@ -118,8 +124,13 @@ def build_tarball(artifact_dir: Path | None = None, dest: Path | None = None,
     handler = handler_dir() / "inference.py"
     compile(handler.read_text(), str(handler), "exec")   # syntax gate, not an import
     shutil.copy2(handler, stage / "code" / "inference.py")
-    (stage / "code" / "requirements.txt").write_text(REQUIREMENTS)
-    shutil.copy2(fetch_wheel(), stage / "code" / "wheels" / WHEEL)
+    if cf_source == "gbm":
+        # only the booster path needs lightgbm; a grid tarball ships no
+        # requirements.txt at all, so the container skips pip entirely
+        (stage / "code" / "requirements.txt").write_text(REQUIREMENTS)
+        shutil.copy2(fetch_wheel(), stage / "code" / "wheels" / WHEEL)
+    else:
+        (stage / "code" / "wheels").rmdir()
 
     (stage / "artifacts" / "manifest.json").write_text(json.dumps(man, indent=2) + "\n")
 
@@ -151,7 +162,12 @@ if __name__ == "__main__":  # pragma: no cover
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--upload", action="store_true")
     ap.add_argument("--model-version", default=None)
+    ap.add_argument("--artifact-dir", default=None,
+                    help="e.g. data/serve_artifacts_stgnn")
+    ap.add_argument("--dest", default=None,
+                    help="e.g. data/dist/model-stgnn.tar.gz")
     a = ap.parse_args()
-    t = build_tarball(model_version=a.model_version)
+    t = build_tarball(artifact_dir=a.artifact_dir, dest=a.dest,
+                      model_version=a.model_version)
     if a.upload:
         upload(t)
