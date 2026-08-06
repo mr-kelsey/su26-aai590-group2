@@ -107,23 +107,28 @@ def build_X(cols, unit_code_categories):
 
     for f in FEATURES:
         if f not in CATEGORICAL:
-            X[f] = X[f].astype(DTYPES[f], copy=False)
+            X[f] = X[f].astype(DTYPES[f])
 
     for c in CATEGORICAL:
-        codes = X[c].astype(DTYPES[c], copy=False)
+        codes = X[c].astype(DTYPES[c])
         # Build the category index at the DECLARED dtype. A plain Python list
         # would give int64 categories where `_xy` produces int32. LightGBM matches
         # on value so the codes come out the same either way, but keeping the
         # dtype identical is what lets the golden fixture assert frame equality
         # instead of merely value equality.
         cats = pd.Index(np.asarray(unit_code_categories, dtype=DTYPES[c]))
-        X[c] = pd.Categorical(codes, categories=cats)
-        if X[c].isna().any():
-            bad = sorted(set(np.asarray(codes)[np.asarray(X[c].isna())]))[:5]
+        # Checked BEFORE constructing the Categorical. Relying on out-of-set
+        # values becoming NaN is deprecated in pandas 3 and is slated to raise,
+        # and a silently-NaN unit_code is precisely the failure this guard exists
+        # to catch, so it must not depend on behaviour that is going away.
+        unknown = np.setdiff1d(np.asarray(codes), np.asarray(cats))
+        if unknown.size:
             raise ValueError(
                 "unit_code values outside the trained category set: %r "
-                "(the cell grid changed; the model cannot score these)" % (bad,)
+                "(the cell grid changed; the model cannot score these)"
+                % (sorted(unknown.tolist())[:5],)
             )
+        X[c] = pd.Categorical(codes, categories=cats)
 
     if list(X.columns) != FEATURES:            # belt and braces; pandas preserves it
         raise AssertionError("column order drifted during assembly")
@@ -175,29 +180,70 @@ def effect_log(dist_m, band_ids, attendance, is_night, eff):
     aggregate to the published DiD for a game at `response.center`. A busier or
     quieter game is then moved off that point on purpose; that is what the
     response is for.
+
+    MONOTONE CAP. The per-band responses are fitted independently, so nothing in
+    the fit stops an outer band from overtaking an inner one once attendance moves
+    off centre. It happened on real data: at 35,060 attendance the 2.5-5km band
+    came out at +2.57% against 1-2.5km at +1.97%, because the outer band carried a
+    barely-significant attendance slope (CI lower bound 0.0002) and the inner one
+    carried none. Those two effects are statistically indistinguishable to begin
+    with (CIs +0.7 to +3.5 and +0.2 to +3.0), so the crossover is an artifact of
+    fitting bands separately rather than a finding, and on the map it would read
+    as the ripple growing with distance.
+
+    So we impose the one structural property the distance-decay model actually
+    asserts: the effect does not increase with distance. A running minimum over
+    the band totals, in distance order. At mean attendance the totals are already
+    ordered, so the cap is INACTIVE at the calibration point and the published
+    band numbers are untouched; it only ever binds off-centre.
     """
     d = np.asarray(dist_m, dtype=float)
     att = np.asarray(attendance, dtype=float)
     night = np.asarray(is_night, dtype=float)
-
-    dec = eff["decay"]
-    by_id = {b["id"]: b for b in eff["bands"]}
     resp = eff["response"]
-    z = (att - resp["center"]) / (resp["scale"] or 1.0)
+    z = float(np.mean((att - resp["center"]) / (resp["scale"] or 1.0)))
+    nt = float(np.mean(night))
 
+    totals = band_totals(eff, z, nt)
+    dec = eff["decay"]
     base = dec["A"] * np.exp(-d / dec["L"]) + dec["c"]
     out = np.zeros_like(base)
     ids = np.asarray(band_ids)
-    for bid, b in by_id.items():
+    for b in eff["bands"]:
+        bid = b["id"]
         sel = ids == bid
-        if not sel.any():
-            continue
+        if not sel.any() or totals[bid] is None:
+            continue                                  # suppressed: exactly 1x
+        # the cap moves the band TOTAL, so the correction it implies is carried
+        # into the per-row offset alongside the calibration shift
+        raw = float(b.get("did_log", 0.0)) + _adj(eff, bid, z, nt)
+        out[sel] = base[sel] + b.get("shift", 0.0) + _adj(eff, bid, z, nt) \
+            + (totals[bid] - raw)
+    return out
+
+
+def _adj(eff, bid, z, nt):
+    r = eff["response"]
+    return r["beta"].get(bid, 0.0) * z + r["night"].get(bid, 0.0) * nt
+
+
+def band_totals(eff, z, nt):
+    """Per-band log effect after the monotone cap. None means suppressed.
+
+    Separated out so the cap is directly testable: it is a running minimum over
+    the bands in distance order, and asserting that on the offsets instead would
+    be wrong, because each band's calibration shift is relative to its own
+    distance range and the shifts are not themselves ordered.
+    """
+    out, running = {}, None
+    for b in eff["bands"]:
+        bid = b["id"]
         if not b.get("significant", True):
-            out[sel] = 0.0            # exactly 1x, see the docstring
+            out[bid] = None
             continue
-        out[sel] = (base[sel] + b.get("shift", 0.0)
-                    + resp["beta"].get(bid, 0.0) * (z[sel] if z.ndim else z)
-                    + resp["night"].get(bid, 0.0) * (night[sel] if night.ndim else night))
+        total = float(b.get("did_log", 0.0)) + _adj(eff, bid, z, nt)
+        running = total if running is None else min(total, running)
+        out[bid] = running
     return out
 
 
