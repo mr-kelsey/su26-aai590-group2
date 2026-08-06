@@ -1,18 +1,29 @@
-# The live capstone endpoint
+# The live capstone endpoints
 
-**DONE 2026-08-06.** The site calls the Tier 1 GBM behind SageMaker. This file is
-now the record of how it is wired, not a to-do list. History and rationale:
+**DONE 2026-08-06, TWO MODELS.** The site calls both tiers behind SageMaker. This
+file is the record of how they are wired, not a to-do list. History and rationale:
 `docs/superpowers/specs/2026-08-04-oracle-ripple-revamp-design.md`.
 
 ## What is wired
 
-| | |
-|---|---|
-| Endpoint | `eia-nowcast-oracle-ripple-v1`, us-east-2, `ml.m5.large` |
-| Model | Tier 1 LightGBM counterfactual + canonical-ring DiD effect layer |
-| Handler | `src/eia_pipeline/serve/handler/inference.py` in the team repo |
-| Measure | **visitor-hours**, hours 16-23 only |
-| Registry | model package group `eia-nowcast-oracle-ripple`, approval-gated |
+| | Tier 1 | Tier 2 |
+|---|---|---|
+| Endpoint | `eia-nowcast-oracle-ripple-v1` | `eia-nowcast-oracle-ripple-stgnn-v1` |
+| Model | LightGBM counterfactual | STGNN (flow edges) counterfactual, precomputed cf grid |
+| Effect layer | canonical-ring DiD on GBM residuals | its OWN DiD on STGNN residuals |
+| Env var | `SAGEMAKER_ENDPOINT_ORACLE` | `SAGEMAKER_ENDPOINT_ORACLE_STGNN` |
+| Registry group | `eia-nowcast-oracle-ripple` | `eia-nowcast-oracle-ripple-stgnn` |
+
+Both: us-east-2, `ml.m5.large`, approval-gated, handler
+`src/eia_pipeline/serve/handler/inference.py` (one handler, branched on the
+manifest's `cf_source`), measure **visitor-hours**, hours 16-23 only, identical
+`oracle-ripple/1` wire schema distinguished only by `model_version`. The Tier 2
+counterfactual grid is exactly as live as the booster (both are deterministic
+functions of baked artifacts; the forward pass ran at build time), and its
+serve tensors are proven bit-identical to the training tensors on the whole
+training overlap. Tier 2 rejects 2023-01-02 (no convolution context).
+`/api/predict/compare` fans out to every live arm in one request; the Tier 2
+arm is live-or-omitted, never simulated.
 
 The model is a COUNTERFACTUAL: it predicts what a block would look like with no
 game, and a separate measured effect is applied on top. The endpoint returns the
@@ -73,11 +84,15 @@ already covers real drift.
 ## Fixtures
 
 `src/lib/models/__tests__/fixtures/endpoint-*.json` are REAL responses recorded
-from the packaged handler, not hand-written. Re-record them after any change to
-the handler or the artifacts:
+from the packaged handlers, not hand-written. Re-record them after any change to
+a handler or its artifacts:
 
 ```bash
-cd /Users/Steve3/Projects/personal/capstone/su26-aai590-group2 && uv run python -m eia_pipeline.serve.smoke
+cd /Users/Steve3/Projects/personal/capstone/su26-aai590-group2 && uv run python -m eia_pipeline.serve.smoke --write-fixtures website/src/lib/models/__tests__/fixtures
+```
+
+```bash
+cd /Users/Steve3/Projects/personal/capstone/su26-aai590-group2 && uv run python -m eia_pipeline.serve.smoke --model oracle-ripple-stgnn --write-fixtures website/src/lib/models/__tests__/fixtures
 ```
 
 ## Verifying without a deployed endpoint

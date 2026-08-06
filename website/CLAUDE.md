@@ -9,11 +9,23 @@ on a light map of the model's 452 grid cells with the project's canonical rings 
 250-500m / 500m-1km / 1-2.5km / 2.5-5km, the RING_EDGES_M metric standard). No-game dates
 say "expect a normal day" and offer the next home games as one-click chips.
 
-**Mode as of 2026-08-06: LIVE.** `/api/predict/oracle-ripple` invokes the SageMaker
-endpoint `eia-nowcast-oracle-ripple-v1` (Tier 1 LightGBM counterfactual + canonical-ring
-DiD effect layer; handler in the team repo at `src/eia_pipeline/serve/`). Full record:
-**`docs/PLUG-IN-ENDPOINT.md`**. Design spec:
+**Mode as of 2026-08-06: LIVE, TWO MODELS.** `/api/predict/oracle-ripple` invokes the
+SageMaker endpoint `eia-nowcast-oracle-ripple-v1` (Tier 1 LightGBM counterfactual +
+canonical-ring DiD effect layer); `/api/predict/oracle-ripple-stgnn` invokes
+`eia-nowcast-oracle-ripple-stgnn-v1` (Tier 2 STGNN flow-arm counterfactual grid + its
+OWN DiD effect layer, same oracle-ripple/1 wire schema). The UI calls
+`/api/predict/compare`, which fans out to every live arm in one request
+(Promise.allSettled, asymmetric aborts 20s/10s, secondary live-or-omitted) and drives
+the model toggle + compare strip. Handlers in the team repo at
+`src/eia_pipeline/serve/`. Full record: **`docs/PLUG-IN-ENDPOINT.md`**. Design spec:
 `docs/superpowers/specs/2026-08-04-oracle-ripple-revamp-design.md`.
+
+Two-model honesty rules (do not relax): the STGNN arm is NEVER served simulated (the
+arms share one simulator, so a simulated pair would render identical numbers under two
+labels); the compare strip suppresses its delta unless both arms are live, same
+measure, game date; no MAE appears on the site (the tiers are not scored on a common
+basis, docs/PIPELINE.md); one rampMaxPct across arms; Tier 1 is always the default and
+carries the neutral `benchmark` chip.
 
 Going live needs TWO keys: `status: 'live'` in `config.ts` AND `SAGEMAKER_ENDPOINT_ORACLE`
 set in the environment. Vercel binds env vars at build time, so deleting the var (or
@@ -111,8 +123,10 @@ s3:GetObject on `website-data/*` only). Deliberately NOT the bare AWS_* names.
 
 Runtime (live since 2026-08-06, see `docs/PLUG-IN-ENDPOINT.md`): `AWS_REGION`,
 `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` (long-lived IAM user
-`venue-economics-invoke`, scoped to `sagemaker:InvokeEndpoint` on the one endpoint ARN,
-never temporary session creds), `SAGEMAKER_ENDPOINT_ORACLE`. The retired
+`venue-economics-invoke`, one inline `sagemaker:InvokeEndpoint` policy per endpoint
+ARN, never temporary session creds), `SAGEMAKER_ENDPOINT_ORACLE`, and
+`SAGEMAKER_ENDPOINT_ORACLE_STGNN` (the Tier 2 arm; unset = the arm is omitted from
+compare responses and the site renders single-model). The retired
 `SAGEMAKER_ENDPOINT` var is deleted from Vercel.
 
 ## Simulator provenance (constants in `simulate.ts`)
