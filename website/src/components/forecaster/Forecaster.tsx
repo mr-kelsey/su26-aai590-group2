@@ -93,6 +93,7 @@ export default function Forecaster() {
       </div>
       <ImpactMap
         bands={oracleRippleConfig.bands}
+        rampMaxPct={oracleRippleConfig.rampMaxPct}
         result={status === 'result' ? envelope?.result ?? null : null}
         place={place}
         focusCellId={

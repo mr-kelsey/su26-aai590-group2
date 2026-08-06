@@ -27,8 +27,9 @@ import Forecaster from '../components/forecaster/Forecaster.tsx';
         normal day, trained only on hours with no event. The forecast applies
         the measured game-day effect on top, band by band, out from the
         ballpark. Pick your spot and a date; the schedule fills in the rest.
-        Numbers shown today are a simulated preview built from those measured
-        effects; the live model endpoint replaces them when it ships.
+        Numbers come from the live model, in visitor-hours over the 4pm to 11pm
+        window: one visitor-hour is one person present for one hour, so it is
+        not a headcount.
       </p>
       <p class="mt-3 text-xs leading-relaxed text-faint">
         Built on the USD AAI-590 capstone by Stephen Farmer, Johnathan Kelsey,

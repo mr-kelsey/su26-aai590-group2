@@ -9,12 +9,17 @@ on a light map of the model's 452 grid cells with the project's canonical rings 
 250-500m / 500m-1km / 1-2.5km / 2.5-5km, the RING_EDGES_M metric standard). No-game dates
 say "expect a normal day" and offer the next home games as one-click chips.
 
-**Mode as of 2026-08-04: SIMULATED PREVIEW.** The team's model endpoint spec is pending
-(owner: Luke). Until it lands, `/api/predict/oracle-ripple` computes deterministic results
-from the team's published measured game effects and badges them "Simulated preview"
-(`meta.source: 'simulated'`). Plugging in the live endpoint is a two-file change + env vars:
-follow **`docs/PLUG-IN-ENDPOINT.md`**. Design spec:
+**Mode as of 2026-08-06: LIVE.** `/api/predict/oracle-ripple` invokes the SageMaker
+endpoint `eia-nowcast-oracle-ripple-v1` (Tier 1 LightGBM counterfactual + canonical-ring
+DiD effect layer; handler in the team repo at `src/eia_pipeline/serve/`). Full record:
+**`docs/PLUG-IN-ENDPOINT.md`**. Design spec:
 `docs/superpowers/specs/2026-08-04-oracle-ripple-revamp-design.md`.
+
+Going live needs TWO keys: `status: 'live'` in `config.ts` AND `SAGEMAKER_ENDPOINT_ORACLE`
+set in the environment. Deleting the env var is an instant rollback with no deploy;
+`ORACLE_FORCE_SIMULATED=1` does the same without touching the endpoint. `simulate.ts` is
+kept as that badged fallback and is NOT an automatic one, because it speaks a different
+unit at a different magnitude.
 
 **Retired 2026-08-04:** the 540-era county-quarter estimator (county/quarter/attendance form,
 `/api/predict`, `county-context.json`, XGBoost endpoint `eia-foodsvc-xgb-v2`). Recover from
@@ -24,10 +29,13 @@ git history before commit `60522bc` if ever needed.
 
 - **Model registry** `src/lib/models/`: `types.ts` (envelope + field types), `validate.ts`
   (server-side input validation from field defs), `registry.ts` (id -> handle). Per model:
-  `oracle-ripple/config.ts` (input FIELDS + BANDS + status 'preview'|'live'; the volatile
-  part, edit this when the real input list arrives), `adapter.ts` (buildRequest/parseResponse
-  stubs awaiting the endpoint wire format), `simulate.ts` (deterministic preview; every
-  constant sourced from the capstone gold tables or labeled heuristic).
+  `oracle-ripple/config.ts` (input FIELDS + BANDS + rampMaxPct + status), `context.ts`
+  (cell geometry, the 400m snap, schedule lookup, band cut: SHARED by the simulator and the
+  live adapter so both resolve the user's block and the day's game identically; the
+  simulator's own constants deliberately stay out of it), `adapter.ts`
+  (buildRequest/parseResponse against the live wire format, with contract assertions that
+  throw `EndpointContractError` and become a 502), `simulate.ts` (deterministic preview;
+  every constant sourced from the capstone gold tables or labeled heuristic).
 - **Two on-demand routes** (`prerender = false`; everything else stays static):
   `src/pages/api/predict/[model].ts` (validate -> simulate while status 'preview'/env
   unset, or SageMaker invoke via adapter when 'live'; 400/404/429/503/500 taxonomy) and
@@ -63,9 +71,11 @@ git history before commit `60522bc` if ever needed.
   config file) + TypeScript strict + **React 19** islands + `@astrojs/vercel`.
 - **maplibre-gl v6** for the map; basemap is CARTO dark-matter GL style (free with the
   attribution control shown; style URL is one constant in `ImpactMap.tsx`).
-- **vitest** unit tests (`npm test`): validation (incl. place fields), simulator
-  determinism/schedule/focus paths, predict + places route statuses. 29 tests as of
-  2026-08-04 (revision 2).
+- **vitest** unit tests (`npm test`): validation, simulator determinism plus a GOLDEN test
+  pinning its exact output (the old determinism test compared simulate() to itself and so
+  could not catch a refactor), adapter against REAL recorded endpoint fixtures, and the
+  predict route including the live path with the AWS SDK mocked so no test can ever place
+  a billed call. 56 tests as of 2026-08-06.
 - `@aws-sdk/client-sagemaker-runtime` retained for the live path.
 
 ## maplibre v6 + Vite worker gotcha (do not relearn)
@@ -109,8 +119,11 @@ attendances (25,729 / 33,112 / 39,544); day/night from the day/night slices. Day
 attendance are NOT user inputs: they come from the bundled schedule (actual attendance for
 played games, day/night median for future ones). No-game dates return zero lift plus the
 next home games. The simulator speaks DAILY VISITS (`measure.id: 'visits'`); the live model
-speaks visitor-hours, and the UI renders whichever the result declares. Never mix the two
-units (capstone lesson).
+speaks VISITOR-HOURS over hours 16-23. The UI genuinely renders whichever the result
+declares now, through `components/forecaster/measureCopy.ts`: it previously hardcoded
+"visits" despite this file claiming otherwise. Never mix the two units, and never divide
+visitor-hours by roughly four to fake a headcount, because that ratio is a venue-specific
+median and not a conversion (capstone lesson).
 
 ## Source of truth and deploy flow (cutover DONE 2026-08-04)
 

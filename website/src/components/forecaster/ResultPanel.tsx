@@ -1,4 +1,5 @@
 import type { PredictEnvelope } from '../../lib/models/types';
+import { measureCopy } from './measureCopy';
 
 const intFmt = new Intl.NumberFormat('en-US');
 const compactFmt = new Intl.NumberFormat('en-US', {
@@ -25,6 +26,15 @@ export default function ResultPanel({ envelope, onJumpToDate }: Props) {
   const business = inputs.business as { name?: string | null };
   const spotLabel = business?.name || 'your spot';
   const date = String(inputs.date ?? '');
+  const copy = measureCopy(result.measure);
+  /* Beyond about 2km the measured effect's interval straddles 1%, so rendering
+     "+0.4%" as a hero implies precision the estimate does not have. */
+  const tooSmall = game.home && !focus.outside && focus.liftPct < 1;
+  /* Derived defensively: prefer the explicit flag, fall back to comparing the
+     date against the observed window, and claim nothing if neither is present. */
+  const projected =
+    meta.projected ??
+    (meta.observedThrough ? date > meta.observedThrough : false);
 
   return (
     <div className="overflow-hidden rounded-3xl border border-mist bg-surface text-left shadow-[0_4px_35px_rgba(68,83,94,0.15)]">
@@ -41,13 +51,27 @@ export default function ResultPanel({ envelope, onJumpToDate }: Props) {
             </p>
           ) : (
             <>
-              <p className="mt-2 text-5xl font-light tracking-tight text-fg">
-                +{focus.liftPct}%
-              </p>
-              <p className="mt-2 text-sm text-muted">
-                about {intFmt.format(focus.extra)} extra visits to your block ·{' '}
-                {focus.bandLabel} from Oracle Park
-              </p>
+              {tooSmall ? (
+                <>
+                  <p className="mt-2 text-3xl font-light tracking-tight text-fg">
+                    No measurable change
+                  </p>
+                  <p className="mt-2 text-sm text-muted">
+                    At {focus.bandLabel} from Oracle Park the game-day effect is
+                    too small to separate from a normal evening.
+                  </p>
+                </>
+              ) : (
+                <>
+                  <p className="mt-2 text-5xl font-light tracking-tight text-fg">
+                    +{focus.liftPct}%
+                  </p>
+                  <p className="mt-2 text-sm text-muted">
+                    {copy.blockPhrase(intFmt.format(Math.round(focus.extra)))} ·{' '}
+                    {focus.bandLabel} from Oracle Park
+                  </p>
+                </>
+              )}
               {focus.snapped ? (
                 <p className="mt-1 text-xs text-faint">
                   Nearest modeled block used for this estimate.
@@ -101,12 +125,15 @@ export default function ResultPanel({ envelope, onJumpToDate }: Props) {
             <div className="px-6 py-4 text-center">
               <p className="text-xs font-medium text-faint">Citywide within 2.5km</p>
               <p className="mt-1 text-lg font-medium tabular-nums text-fg">
-                +{compactFmt.format(result.headline.extraWithin2p5km)} visits
+                +{compactFmt.format(result.headline.extraWithin2p5km)} {copy.tileUnit}
               </p>
             </div>
             <div className="px-6 py-4 text-center">
               <p className="text-xs font-medium text-faint">
-                Core ring ({result.bands[0]?.label})
+                {/* The 0-250m ring is a SINGLE 250m cell holding 27 businesses, so
+                    the live endpoint reports its hero over 0-500m (five cells)
+                    instead. Label whichever it actually sent. */}
+                Core ring ({meta.source === 'live' ? '0-500m' : result.bands[0]?.label})
               </p>
               <p className="mt-1 text-lg font-medium tabular-nums text-fg">
                 +{result.headline.coreBandLiftPct}%
@@ -135,13 +162,22 @@ export default function ResultPanel({ envelope, onJumpToDate }: Props) {
                     />
                   </span>
                   <span className="tabular-nums text-fg">
-                    +{b.liftPct}% · {intFmt.format(b.extra)}
+                    +{b.liftPct}% · {intFmt.format(Math.round(b.extra))}
                   </span>
                 </li>
               );
             })}
+            <li className="text-right text-xs text-faint">
+              lift and extra {copy.tileUnit} by distance from Oracle Park
+            </li>
           </ul>
         </>
+      ) : null}
+
+      {copy.gloss ? (
+        <p className="border-t border-mist px-6 py-3 text-xs leading-relaxed text-faint">
+          {copy.gloss}
+        </p>
       ) : null}
 
       {meta.source === 'simulated' ? (
@@ -149,7 +185,25 @@ export default function ResultPanel({ envelope, onJumpToDate }: Props) {
           Simulated preview: computed from the team's measured game effects, not
           the live model. The live endpoint replaces these numbers when it ships.
         </p>
-      ) : null}
+      ) : projected ? (
+        /* Slate, not red. Every upcoming game a user actually cares about is
+           projected, so an alarm-coloured banner on all of them would be noise.
+           The framing is the accurate one: the EFFECT is measured from games
+           already played; what is projected is the ordinary-evening baseline it
+           multiplies. */
+        <p className="border-t border-mist bg-bg px-6 py-3 text-xs leading-relaxed text-muted">
+          <span className="font-medium text-fg">Projected date.</span> This game is
+          past the end of our measured data
+          {meta.observedThrough ? ` (${fmtDate(meta.observedThrough)})` : ''}, so
+          your block's normal-evening baseline is projected from the season's
+          pattern rather than observed. The game-day effect applied on top of it is
+          measured from games already played.
+        </p>
+      ) : (
+        <p className="border-t border-mist bg-bg px-6 py-3 text-center text-xs text-faint">
+          Live model{meta.version && meta.version !== 'live' ? ` · ${meta.version}` : ''}
+        </p>
+      )}
     </div>
   );
 }

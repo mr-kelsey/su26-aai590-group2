@@ -25,7 +25,44 @@ interface Props {
   result: RippleResult | null;
   place: PlaceValue | null;
   focusCellId: string | null;
+  rampMaxPct: number;
   onPickPlace(lat: number, lon: number): void;
+}
+
+/* Choropleth ramp, derived from ONE configured ceiling.
+
+   The previous stops (0/5/25/120/420) were taken from the simulator's core BAND
+   lift of 410% but interpolate over CELL lift, whose simulator maximum is 108.9%
+   and whose live maximum is 88.2%. The top two stops were unreachable and the
+   map was a near-uniform wash. Deriving every stop as a fraction of one number
+   keeps them all in range and makes retuning a one-line change.
+
+   Fixed, not per-response quantiles. Normalizing each date to its own maximum
+   would render a 25,000-attendance Tuesday identically to a 40,000 Saturday,
+   which destroys the one thing the map is for. The live distribution is heavily
+   skewed (p50 2.0%, p95 4.2%, max 88.2%), so the low stops sit close together to
+   keep the ordinary blocks distinguishable. */
+function fillPaint(maxPct: number) {
+  const s = (f: number) => Math.max(0.01, Number((maxPct * f).toFixed(2)));
+  return {
+    'fill-color': [
+      'interpolate', ['linear'], ['get', 'lift'],
+      0, '#c7d3da',
+      s(0.02), '#f9a19e',
+      s(0.1), '#ed4037',
+      s(0.35), '#b72025',
+      s(1), '#77161e',
+    ],
+    'fill-opacity': [
+      'interpolate', ['linear'], ['get', 'lift'],
+      0, 0.08,
+      s(0.005), 0.16,
+      s(0.02), 0.3,
+      s(0.1), 0.45,
+      s(0.35), 0.6,
+      s(1), 0.75,
+    ],
+  } as never;
 }
 
 /** Grid cell polygons, lift stamped into properties for data-driven paint. */
@@ -79,7 +116,14 @@ function pinGeojson(place: PlaceValue | null): GeoJSON.FeatureCollection {
   };
 }
 
-export default function ImpactMap({ bands, result, place, focusCellId, onPickPlace }: Props) {
+export default function ImpactMap({
+  bands,
+  result,
+  place,
+  focusCellId,
+  rampMaxPct,
+  onPickPlace,
+}: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
   const readyRef = useRef(false);
@@ -114,17 +158,7 @@ export default function ImpactMap({ bands, result, place, focusCellId, onPickPla
         id: 'cells-fill',
         type: 'fill',
         source: 'cells',
-        paint: {
-          // mist -> brand red ramp over lift pct, on the light basemap
-          'fill-color': [
-            'interpolate', ['linear'], ['get', 'lift'],
-            0, '#c7d3da', 5, '#f9a19e', 25, '#ed4037', 120, '#b72025', 420, '#77161e',
-          ],
-          'fill-opacity': [
-            'interpolate', ['linear'], ['get', 'lift'],
-            0, 0.08, 1, 0.16, 5, 0.3, 25, 0.45, 120, 0.6, 420, 0.75,
-          ],
-        },
+        paint: fillPaint(rampMaxPct),
       });
       map.addLayer({
         id: 'focus-line',
@@ -175,7 +209,7 @@ export default function ImpactMap({ bands, result, place, focusCellId, onPickPla
         },
       });
       readyRef.current = true;
-      if (resultRef.current) applyResult(map, resultRef.current);
+      if (resultRef.current) applyResult(map, resultRef.current, rampMaxPct);
       applyFocus(map, focusRef.current);
     });
 
@@ -198,7 +232,7 @@ export default function ImpactMap({ bands, result, place, focusCellId, onPickPla
 
   useEffect(() => {
     const map = mapRef.current;
-    if (map && readyRef.current && result) applyResult(map, result);
+    if (map && readyRef.current && result) applyResult(map, result, rampMaxPct);
   }, [result]);
 
   useEffect(() => {
@@ -218,12 +252,59 @@ export default function ImpactMap({ bands, result, place, focusCellId, onPickPla
       <div className="pointer-events-none absolute left-3 top-3 rounded-full border border-mist bg-surface/90 px-3 py-1 text-[11px] font-medium text-muted backdrop-blur">
         {place ? 'Rings at 250m, 500m, 1km, 2.5km, 5km around Oracle Park' : 'Click your spot, or search on the left'}
       </div>
+      {/* The map has never had a legend. With a configurable ceiling the shading
+          is not self-explanatory at all, so it needs one. */}
+      {result ? (
+        <div className="pointer-events-none absolute bottom-8 right-3 rounded-xl border border-mist bg-surface/90 px-3 py-2 backdrop-blur">
+          <p className="mb-1 text-[10px] font-medium text-faint">Lift on this date</p>
+          <div className="flex items-center gap-1">
+            {LEGEND_STOPS.map((f) => (
+              <span key={f} className="flex flex-col items-center gap-0.5">
+                <span
+                  className="h-3 w-6 rounded-sm"
+                  style={{ backgroundColor: legendColor(f), opacity: legendOpacity(f) }}
+                />
+                <span className="text-[9px] tabular-nums text-faint">
+                  {f === 0 ? '0' : `${Math.round(rampMaxPct * f)}%`}
+                </span>
+              </span>
+            ))}
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
 
-function applyResult(map: MapLibreMap, result: RippleResult) {
+const LEGEND_STOPS = [0, 0.02, 0.1, 0.35, 1];
+const LEGEND_COLORS = ['#c7d3da', '#f9a19e', '#ed4037', '#b72025', '#77161e'];
+const LEGEND_OPACITY = [0.18, 0.3, 0.45, 0.6, 0.75];
+const legendColor = (f: number) => LEGEND_COLORS[LEGEND_STOPS.indexOf(f)];
+const legendOpacity = (f: number) => LEGEND_OPACITY[LEGEND_STOPS.indexOf(f)];
+
+function applyResult(map: MapLibreMap, result: RippleResult, maxPct: number) {
   const liftById = new Map(result.cells.map((c) => [c.id, c.liftPct]));
+
+  /* Defense in depth. The adapter throws an EndpointContractError on any cell-id
+     mismatch, so this should be unreachable; it exists because the failure it
+     guards against is invisible. cellsGeojson defaults an unknown id to 0, so a
+     drifted grid would paint a flat map that looks exactly like a no-game day. */
+  if (import.meta.env.DEV) {
+    const covered = cellsJson.cells.filter((c) => liftById.has(c.id)).length;
+    if (result.cells.length && covered < cellsJson.cells.length * 0.9) {
+      console.error(
+        `[ImpactMap] only ${covered}/${cellsJson.cells.length} cells matched the ` +
+          'result; the map is rendering mostly zeros'
+      );
+    }
+    const max = Math.max(0, ...result.cells.map((c) => c.liftPct));
+    if (max > maxPct * 1.25) {
+      console.warn(
+        `[ImpactMap] cell lift ${max.toFixed(1)}% exceeds rampMaxPct ${maxPct}; ` +
+          'the top of the ramp is saturating, retune config.rampMaxPct'
+      );
+    }
+  }
   (map.getSource('cells') as GeoJSONSource | undefined)?.setData(cellsGeojson(liftById));
 }
 

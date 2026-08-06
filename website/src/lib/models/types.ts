@@ -54,6 +54,8 @@ export interface ModelConfig {
   endpointEnvVar: string;
   fields: InputFieldDef[];
   bands: BandDef[];
+  /** choropleth ceiling in lift percent; see the note on the value itself */
+  rampMaxPct: number;
 }
 
 export type InputValues = Record<string, string | number | boolean | PlaceValue | null>;
