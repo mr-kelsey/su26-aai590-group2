@@ -16,10 +16,11 @@ DiD effect layer; handler in the team repo at `src/eia_pipeline/serve/`). Full r
 `docs/superpowers/specs/2026-08-04-oracle-ripple-revamp-design.md`.
 
 Going live needs TWO keys: `status: 'live'` in `config.ts` AND `SAGEMAKER_ENDPOINT_ORACLE`
-set in the environment. Deleting the env var is an instant rollback with no deploy;
-`ORACLE_FORCE_SIMULATED=1` does the same without touching the endpoint. `simulate.ts` is
-kept as that badged fallback and is NOT an automatic one, because it speaks a different
-unit at a different magnitude.
+set in the environment. Vercel binds env vars at build time, so deleting the var (or
+setting `ORACLE_FORCE_SIMULATED=1`) takes effect on the NEXT deploy, not the running one;
+the immediate rollback lever is Vercel Instant Rollback to the prior production
+deployment. `simulate.ts` is kept as that badged fallback and is NOT an automatic one,
+because it speaks a different unit at a different magnitude.
 
 **Retired 2026-08-04:** the 540-era county-quarter estimator (county/quarter/attendance form,
 `/api/predict`, `county-context.json`, XGBoost endpoint `eia-foodsvc-xgb-v2`). Recover from
@@ -97,6 +98,10 @@ maplibre-gl-shared.mjs so a bare `?url` copy would 404 its import) and call
   copy it from a teammate or run `npm run fetch-data` with the POIS_* env vars set.
 - The simulated preview needs NO env vars locally once pois.json is on disk.
   `.claude/launch.json` starts the dev server for browser tooling.
+- Local LIVE testing: a `.env` file is inert for the predict route (`astro dev` never
+  copies .env into process.env; only `astro build` does, and the route reads
+  process.env). Export in the shell instead: `export AWS_REGION=us-east-2
+  AWS_ACCESS_KEY_ID=... AWS_SECRET_ACCESS_KEY=... SAGEMAKER_ENDPOINT_ORACLE=eia-nowcast-oracle-ripple-v1 && npm run dev`.
 
 ## Env vars (Vercel + local `.env`)
 
@@ -104,11 +109,11 @@ Build-time (set in Vercel, Production + Preview): the POIS_* vars documented in
 `.env.example`, used only by `scripts/fetch-pois.mjs` (IAM user `vercel-website-build`,
 s3:GetObject on `website-data/*` only). Deliberately NOT the bare AWS_* names.
 
-Runtime: none while the model is in preview mode. When the live endpoint ships (see
-`docs/PLUG-IN-ENDPOINT.md`): `AWS_REGION`, `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`
-(long-lived IAM user scoped to `sagemaker:InvokeEndpoint` on the new endpoint ARN, never
-temporary session creds), `SAGEMAKER_ENDPOINT_ORACLE`. The retired `SAGEMAKER_ENDPOINT`
-var in Vercel is unused and can be deleted.
+Runtime (live since 2026-08-06, see `docs/PLUG-IN-ENDPOINT.md`): `AWS_REGION`,
+`AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` (long-lived IAM user
+`venue-economics-invoke`, scoped to `sagemaker:InvokeEndpoint` on the one endpoint ARN,
+never temporary session creds), `SAGEMAKER_ENDPOINT_ORACLE`. The retired
+`SAGEMAKER_ENDPOINT` var is deleted from Vercel.
 
 ## Simulator provenance (constants in `simulate.ts`)
 

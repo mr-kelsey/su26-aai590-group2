@@ -61,8 +61,9 @@ PUBLIC):
 ## Env vars
 
 - Build: POIS_* (see `.env.example`).
-- Runtime: none while the model runs in simulated preview. When the live
-  endpoint ships, set `AWS_REGION` / `AWS_ACCESS_KEY_ID` /
-  `AWS_SECRET_ACCESS_KEY` / `SAGEMAKER_ENDPOINT_ORACLE`
-  (see docs/PLUG-IN-ENDPOINT.md). The retired `SAGEMAKER_ENDPOINT` var can be
-  deleted.
+- Runtime (live since 2026-08-06): `AWS_REGION` / `AWS_ACCESS_KEY_ID` /
+  `AWS_SECRET_ACCESS_KEY` (IAM user `venue-economics-invoke`) plus
+  `SAGEMAKER_ENDPOINT_ORACLE` (see docs/PLUG-IN-ENDPOINT.md). Env changes bind
+  at build time: they take effect on the next deploy, not on a running one, so
+  the fast rollback is Vercel Instant Rollback, not var deletion. The retired
+  `SAGEMAKER_ENDPOINT` var is deleted.

@@ -32,8 +32,10 @@ composed result, so the adapter only renames and validates.
    `SAGEMAKER_ENDPOINT_ORACLE` in Vercel (Preview first, then Production).
 4. **Flip.** `status: 'live'` in `config.ts`. That is only ONE of two keys: the
    route also needs `SAGEMAKER_ENDPOINT_ORACLE` set, so merging does not cut
-   over. Removing the env var is an instant rollback;
-   `ORACLE_FORCE_SIMULATED=1` is the same lever without touching the endpoint.
+   over. Vercel binds env vars at BUILD time, so removing the var (or setting
+   `ORACLE_FORCE_SIMULATED=1`) takes effect on the next deploy, not on the
+   running one. The immediate lever is Vercel Instant Rollback to the prior
+   production deployment, whose function still has the old environment.
 5. **Geometry true-up.** DONE and now enforced in code. The model's 452 cell ids
    match `src/data/cells.json` exactly (distances agree within 0.5m), and
    `parseResponse` throws `EndpointContractError` on any id-set mismatch, because
