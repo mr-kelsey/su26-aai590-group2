@@ -20,6 +20,7 @@ We check this mapping with verify_alignment() before trusting anything downstrea
 """
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from ..io import duckdb_s3
@@ -32,13 +33,26 @@ HOURS_PER_WEEK = 168
 DAYS_PER_WEEK = 7
 
 
-def medallion_uri(layer: str, *parts: str) -> str:
-    """AWS bucket pull is structured as: s3://{S3_BUCKET}/{layer}/{parts...}. We build the path here rather than using settings.s3_uri(), because that helper prepends our own eia-nowcast/ prefix and the bronze, silver and gold layers sit alongside that prefix rather than inside it. The bucket name still comes from the environment, and only the layer name is written literally. We raise here if S3_BUCKET is unset so the failure shows up at config time instead of as a confusing read error later.
+def medallion_root() -> str:
+    """Where the bronze/silver/gold layers live. S3 by default.
+
+    MEDALLION_ROOT points this at a local mirror instead, which is what makes the
+    panel rebuildable on a laptop without pulling 3 GB back down from S3. The
+    capstone working folder mirrors the bucket layout closely enough that a single
+    root covers silver/ and gold/ (see ADVAN_BRONZE_GLOB for the one exception).
     """
+    root = os.environ.get("MEDALLION_ROOT")
+    if root:
+        return root.rstrip("/")
     if not settings.s3_bucket:
-        raise RuntimeError("S3_BUCKET not set. See .env.example")
-    key = "/".join([layer, *parts]).strip("/")
-    return f"s3://{settings.s3_bucket}/{key}"
+        raise RuntimeError("Set MEDALLION_ROOT (local mirror) or S3_BUCKET. See .env.example")
+    return f"s3://{settings.s3_bucket}"
+
+
+def medallion_uri(layer: str, *parts: str) -> str:
+    """AWS bucket pull is structured as: s3://{S3_BUCKET}/{layer}/{parts...}. We build the path here rather than using settings.s3_uri(), because that helper prepends our own eia-nowcast/ prefix and the bronze, silver and gold layers sit alongside that prefix rather than inside it. The bucket name still comes from the environment, and only the layer name is written literally. We raise here if neither MEDALLION_ROOT nor S3_BUCKET is set so the failure shows up at config time instead of as a confusing read error later.
+    """
+    return "/".join([medallion_root(), layer, *parts])
 
 
 def bronze_patterns() -> str:
@@ -49,8 +63,15 @@ def bronze_patterns() -> str:
     S3_BUCKET, which breaks a fresh checkout and blocks pytest from even collecting
     the tests. Resolving it lazily puts the config error at the point where we actually
     try to read.
+
+    ADVAN_BRONZE_GLOB overrides the whole glob. The local mirror keeps the Advan
+    drop under S3/advan_weekly_patterns/ rather than bronze/advan_weekly_patterns/,
+    so it is the one path MEDALLION_ROOT alone cannot reach. The '*.parquet' suffix
+    is load-bearing either way: the directory also holds a README.md.
     """
-    return medallion_uri("bronze", "advan_weekly_patterns", "*.parquet")
+    return os.environ.get("ADVAN_BRONZE_GLOB") or medallion_uri(
+        "bronze", "advan_weekly_patterns", "*.parquet"
+    )
 
 
 def silver_occupancy() -> str:

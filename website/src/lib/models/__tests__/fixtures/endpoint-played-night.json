@@ -1,0 +1,3331 @@
+{
+  "schema_version": "oracle-ripple/1",
+  "model_version": "gbm-full-control-2026-08-06.1",
+  "measure": {
+    "id": "visitor_hours",
+    "noun": "visitor-hours"
+  },
+  "date": "2025-08-15",
+  "window": {
+    "hours": [
+      16,
+      23
+    ],
+    "label": "4pm to 11pm"
+  },
+  "bands_m": [
+    0.0,
+    250.0,
+    500.0,
+    1000.0,
+    2500.0,
+    5000.0
+  ],
+  "game": {
+    "home": true,
+    "n_games": 1,
+    "start": "night",
+    "first_pitch_hour": 19,
+    "attendance": 34172.0,
+    "attendance_source": "actual"
+  },
+  "basis": {
+    "training_window": [
+      "2023-01-02",
+      "2025-12-31"
+    ],
+    "observed_panel_through": "2026-05-31",
+    "projected": false,
+    "baseline_staleness_days": 14,
+    "weather_source": "observed",
+    "t_index_beyond_training": false,
+    "effect_window": [
+      "2023-01-01",
+      "2024-12-31"
+    ]
+  },
+  "competing_events": {
+    "chase_day": false,
+    "moscone_day": false,
+    "citywide_day": false,
+    "street_fair_day": false
+  },
+  "bands": [
+    {
+      "id": "b1",
+      "label": "0-250m",
+      "inner_m": 0.0,
+      "outer_m": 250.0,
+      "lift_pct": 88.16,
+      "extra": 589.42,
+      "counterfactual": 668.58,
+      "n_cells": 1,
+      "ci95_pct": [
+        37.76121408951869,
+        67.81508170932224
+      ],
+      "significant": true
+    },
+    {
+      "id": "b2",
+      "label": "250-500m",
+      "inner_m": 250.0,
+      "outer_m": 500.0,
+      "lift_pct": 38.25,
+      "extra": 1646.18,
+      "counterfactual": 4303.79,
+      "n_cells": 4,
+      "ci95_pct": [
+        26.59058811974706,
+        39.55154280430069
+      ],
+      "significant": true
+    },
+    {
+      "id": "b3",
+      "label": "500m-1km",
+      "inner_m": 500.0,
+      "outer_m": 1000.0,
+      "lift_pct": 13.935,
+      "extra": 2719.16,
+      "counterfactual": 19513.54,
+      "n_cells": 12,
+      "ci95_pct": [
+        9.614519338766137,
+        17.940738226920306
+      ],
+      "significant": true
+    },
+    {
+      "id": "b4",
+      "label": "1-2.5km",
+      "inner_m": 1000.0,
+      "outer_m": 2500.0,
+      "lift_pct": 1.994,
+      "extra": 17207.62,
+      "counterfactual": 863128.67,
+      "n_cells": 105,
+      "ci95_pct": [
+        0.7087361459812813,
+        3.5086115824294772
+      ],
+      "significant": true
+    },
+    {
+      "id": "b5",
+      "label": "2.5-5km",
+      "inner_m": 2500.0,
+      "outer_m": 5000.0,
+      "lift_pct": 2.02,
+      "extra": 7708.92,
+      "counterfactual": 381555.15,
+      "n_cells": 194,
+      "ci95_pct": [
+        0.17107908116067438,
+        2.985466320357011
+      ],
+      "significant": true
+    },
+    {
+      "id": "b6",
+      "label": "beyond 5km",
+      "inner_m": 5000.0,
+      "outer_m": null,
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 117634.84,
+      "n_cells": 136,
+      "ci95_pct": [
+        -1.4059697570635965,
+        2.0531290953266
+      ],
+      "significant": false
+    }
+  ],
+  "cells": [
+    {
+      "id": "c16759_-43118",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 9912.44,
+      "dist_venue_m": 9583.8
+    },
+    {
+      "id": "c16760_-43101",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 227.07,
+      "dist_venue_m": 7613.4
+    },
+    {
+      "id": "c16760_-43123",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 1317.22,
+      "dist_venue_m": 10253.5
+    },
+    {
+      "id": "c16761_-43112",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 20.11,
+      "dist_venue_m": 8310.3
+    },
+    {
+      "id": "c16761_-43114",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 13.39,
+      "dist_venue_m": 8614.4
+    },
+    {
+      "id": "c16761_-43115",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 66.0,
+      "dist_venue_m": 8763.4
+    },
+    {
+      "id": "c16762_-43113",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 250.28,
+      "dist_venue_m": 8264.5
+    },
+    {
+      "id": "c16762_-43114",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 572.08,
+      "dist_venue_m": 8401.9
+    },
+    {
+      "id": "c16763_-43113",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 159.59,
+      "dist_venue_m": 8084.7
+    },
+    {
+      "id": "c16763_-43125",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 1139.37,
+      "dist_venue_m": 10053.8
+    },
+    {
+      "id": "c16764_-43112",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 124.03,
+      "dist_venue_m": 7696.1
+    },
+    {
+      "id": "c16764_-43113",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 928.02,
+      "dist_venue_m": 7847.3
+    },
+    {
+      "id": "c16764_-43126",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 2.14,
+      "dist_venue_m": 10018.1
+    },
+    {
+      "id": "c16765_-43112",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 261.97,
+      "dist_venue_m": 7492.7
+    },
+    {
+      "id": "c16765_-43118",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 906.51,
+      "dist_venue_m": 8402.9
+    },
+    {
+      "id": "c16766_-43100",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 62.92,
+      "dist_venue_m": 6142.0
+    },
+    {
+      "id": "c16766_-43111",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 78.24,
+      "dist_venue_m": 7186.5
+    },
+    {
+      "id": "c16766_-43112",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 183.32,
+      "dist_venue_m": 7348.7
+    },
+    {
+      "id": "c16766_-43118",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 72.89,
+      "dist_venue_m": 8324.9
+    },
+    {
+      "id": "c16766_-43119",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 38.21,
+      "dist_venue_m": 8490.3
+    },
+    {
+      "id": "c16766_-43120",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 824.19,
+      "dist_venue_m": 8630.7
+    },
+    {
+      "id": "c16766_-43121",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 511.88,
+      "dist_venue_m": 8748.4
+    },
+    {
+      "id": "c16766_-43128",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 0.83,
+      "dist_venue_m": 10118.9
+    },
+    {
+      "id": "c16767_-43092",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 1.77,
+      "dist_venue_m": 5850.2
+    },
+    {
+      "id": "c16767_-43095",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 56.86,
+      "dist_venue_m": 5796.8
+    },
+    {
+      "id": "c16767_-43100",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 212.93,
+      "dist_venue_m": 5878.9
+    },
+    {
+      "id": "c16767_-43111",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 56.1,
+      "dist_venue_m": 6969.1
+    },
+    {
+      "id": "c16767_-43122",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 2.93,
+      "dist_venue_m": 8811.5
+    },
+    {
+      "id": "c16767_-43126",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 15196.04,
+      "dist_venue_m": 9588.9
+    },
+    {
+      "id": "c16768_-43097",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 55.09,
+      "dist_venue_m": 5551.5
+    },
+    {
+      "id": "c16768_-43101",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 659.15,
+      "dist_venue_m": 5642.9
+    },
+    {
+      "id": "c16768_-43113",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 21.09,
+      "dist_venue_m": 7130.4
+    },
+    {
+      "id": "c16768_-43126",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 20791.9,
+      "dist_venue_m": 9506.9
+    },
+    {
+      "id": "c16769_-43096",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 10.75,
+      "dist_venue_m": 5248.5
+    },
+    {
+      "id": "c16769_-43101",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 1152.68,
+      "dist_venue_m": 5464.2
+    },
+    {
+      "id": "c16769_-43117",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 38.42,
+      "dist_venue_m": 7534.9
+    },
+    {
+      "id": "c16769_-43125",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 16.7,
+      "dist_venue_m": 9047.7
+    },
+    {
+      "id": "c16769_-43126",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 0.47,
+      "dist_venue_m": 9296.9
+    },
+    {
+      "id": "c16769_-43131",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 108.24,
+      "dist_venue_m": 10282.7
+    },
+    {
+      "id": "c16770_-43096",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 5.42,
+      "dist_venue_m": 5005.8
+    },
+    {
+      "id": "c16770_-43111",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 3665.77,
+      "dist_venue_m": 6319.1
+    },
+    {
+      "id": "c16770_-43131",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 777.94,
+      "dist_venue_m": 10217.6
+    },
+    {
+      "id": "c16771_-43101",
+      "lift_pct": 1.989,
+      "extra": 0.28,
+      "counterfactual": 13.92,
+      "dist_venue_m": 4874.3
+    },
+    {
+      "id": "c16771_-43108",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 2923.06,
+      "dist_venue_m": 5643.3
+    },
+    {
+      "id": "c16771_-43124",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 3.46,
+      "dist_venue_m": 8507.4
+    },
+    {
+      "id": "c16772_-43096",
+      "lift_pct": 1.99,
+      "extra": 37.5,
+      "counterfactual": 1884.77,
+      "dist_venue_m": 4511.7
+    },
+    {
+      "id": "c16772_-43101",
+      "lift_pct": 1.989,
+      "extra": 4.64,
+      "counterfactual": 233.07,
+      "dist_venue_m": 4758.9
+    },
+    {
+      "id": "c16772_-43104",
+      "lift_pct": 1.989,
+      "extra": 0.39,
+      "counterfactual": 19.69,
+      "dist_venue_m": 4936.8
+    },
+    {
+      "id": "c16772_-43105",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 165.66,
+      "dist_venue_m": 5033.5
+    },
+    {
+      "id": "c16772_-43123",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 209.1,
+      "dist_venue_m": 8269.1
+    },
+    {
+      "id": "c16772_-43124",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 49.26,
+      "dist_venue_m": 8415.5
+    },
+    {
+      "id": "c16773_-43095",
+      "lift_pct": 1.991,
+      "extra": 0.36,
+      "counterfactual": 17.85,
+      "dist_venue_m": 4232.7
+    },
+    {
+      "id": "c16773_-43099",
+      "lift_pct": 1.99,
+      "extra": 40.19,
+      "counterfactual": 2019.56,
+      "dist_venue_m": 4398.1
+    },
+    {
+      "id": "c16773_-43100",
+      "lift_pct": 1.99,
+      "extra": 6.12,
+      "counterfactual": 307.69,
+      "dist_venue_m": 4440.2
+    },
+    {
+      "id": "c16773_-43102",
+      "lift_pct": 1.99,
+      "extra": 1.16,
+      "counterfactual": 58.35,
+      "dist_venue_m": 4597.4
+    },
+    {
+      "id": "c16773_-43105",
+      "lift_pct": 1.989,
+      "extra": 0.06,
+      "counterfactual": 3.03,
+      "dist_venue_m": 4972.3
+    },
+    {
+      "id": "c16773_-43107",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 349.66,
+      "dist_venue_m": 5135.5
+    },
+    {
+      "id": "c16773_-43122",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 246.18,
+      "dist_venue_m": 7955.8
+    },
+    {
+      "id": "c16773_-43123",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 95.39,
+      "dist_venue_m": 8089.4
+    },
+    {
+      "id": "c16774_-43095",
+      "lift_pct": 1.992,
+      "extra": 13.14,
+      "counterfactual": 659.55,
+      "dist_venue_m": 4038.1
+    },
+    {
+      "id": "c16774_-43098",
+      "lift_pct": 1.992,
+      "extra": 114.57,
+      "counterfactual": 5752.95,
+      "dist_venue_m": 4035.1
+    },
+    {
+      "id": "c16774_-43099",
+      "lift_pct": 1.992,
+      "extra": 12.47,
+      "counterfactual": 626.04,
+      "dist_venue_m": 4036.7
+    },
+    {
+      "id": "c16774_-43101",
+      "lift_pct": 1.99,
+      "extra": 1.33,
+      "counterfactual": 66.87,
+      "dist_venue_m": 4267.4
+    },
+    {
+      "id": "c16774_-43107",
+      "lift_pct": 1.989,
+      "extra": 67.12,
+      "counterfactual": 3374.45,
+      "dist_venue_m": 4944.8
+    },
+    {
+      "id": "c16774_-43109",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 48.95,
+      "dist_venue_m": 5179.0
+    },
+    {
+      "id": "c16774_-43113",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 369.95,
+      "dist_venue_m": 5900.6
+    },
+    {
+      "id": "c16774_-43124",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 646.02,
+      "dist_venue_m": 8197.0
+    },
+    {
+      "id": "c16774_-43125",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 133.15,
+      "dist_venue_m": 8440.9
+    },
+    {
+      "id": "c16774_-43126",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 92.02,
+      "dist_venue_m": 8625.8
+    },
+    {
+      "id": "c16774_-43127",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 14.95,
+      "dist_venue_m": 8818.0
+    },
+    {
+      "id": "c16774_-43128",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 101.8,
+      "dist_venue_m": 9097.2
+    },
+    {
+      "id": "c16774_-43129",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 1264.09,
+      "dist_venue_m": 9308.3
+    },
+    {
+      "id": "c16774_-43130",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 7.53,
+      "dist_venue_m": 9562.6
+    },
+    {
+      "id": "c16774_-43131",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 1975.13,
+      "dist_venue_m": 9758.6
+    },
+    {
+      "id": "c16774_-43134",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 82.88,
+      "dist_venue_m": 10441.4
+    },
+    {
+      "id": "c16774_-43136",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 49.26,
+      "dist_venue_m": 10955.7
+    },
+    {
+      "id": "c16775_-43095",
+      "lift_pct": 1.995,
+      "extra": 0.22,
+      "counterfactual": 10.78,
+      "dist_venue_m": 3722.1
+    },
+    {
+      "id": "c16775_-43099",
+      "lift_pct": 1.993,
+      "extra": 0.62,
+      "counterfactual": 30.87,
+      "dist_venue_m": 3839.8
+    },
+    {
+      "id": "c16775_-43106",
+      "lift_pct": 1.989,
+      "extra": 36.07,
+      "counterfactual": 1813.0,
+      "dist_venue_m": 4619.0
+    },
+    {
+      "id": "c16775_-43107",
+      "lift_pct": 1.989,
+      "extra": 2.39,
+      "counterfactual": 120.37,
+      "dist_venue_m": 4774.4
+    },
+    {
+      "id": "c16775_-43118",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 89.74,
+      "dist_venue_m": 6791.0
+    },
+    {
+      "id": "c16776_-43098",
+      "lift_pct": 1.997,
+      "extra": 0.42,
+      "counterfactual": 20.78,
+      "dist_venue_m": 3572.4
+    },
+    {
+      "id": "c16776_-43099",
+      "lift_pct": 1.996,
+      "extra": 0.36,
+      "counterfactual": 18.13,
+      "dist_venue_m": 3614.9
+    },
+    {
+      "id": "c16776_-43106",
+      "lift_pct": 1.99,
+      "extra": 3.06,
+      "counterfactual": 153.78,
+      "dist_venue_m": 4394.2
+    },
+    {
+      "id": "c16776_-43109",
+      "lift_pct": 1.989,
+      "extra": 0.01,
+      "counterfactual": 0.44,
+      "dist_venue_m": 4840.9
+    },
+    {
+      "id": "c16777_-43104",
+      "lift_pct": 1.992,
+      "extra": 15.96,
+      "counterfactual": 801.29,
+      "dist_venue_m": 3930.1
+    },
+    {
+      "id": "c16777_-43105",
+      "lift_pct": 1.991,
+      "extra": 15.5,
+      "counterfactual": 778.28,
+      "dist_venue_m": 4090.7
+    },
+    {
+      "id": "c16777_-43106",
+      "lift_pct": 1.991,
+      "extra": 46.93,
+      "counterfactual": 2357.33,
+      "dist_venue_m": 4194.2
+    },
+    {
+      "id": "c16777_-43109",
+      "lift_pct": 1.989,
+      "extra": 0.05,
+      "counterfactual": 2.63,
+      "dist_venue_m": 4692.7
+    },
+    {
+      "id": "c16778_-43095",
+      "lift_pct": 2.021,
+      "extra": 0.32,
+      "counterfactual": 16.03,
+      "dist_venue_m": 3032.2
+    },
+    {
+      "id": "c16778_-43102",
+      "lift_pct": 2.002,
+      "extra": 0.13,
+      "counterfactual": 6.45,
+      "dist_venue_m": 3385.4
+    },
+    {
+      "id": "c16778_-43104",
+      "lift_pct": 1.996,
+      "extra": 7.46,
+      "counterfactual": 373.81,
+      "dist_venue_m": 3658.8
+    },
+    {
+      "id": "c16778_-43105",
+      "lift_pct": 1.993,
+      "extra": 10.24,
+      "counterfactual": 513.64,
+      "dist_venue_m": 3845.7
+    },
+    {
+      "id": "c16778_-43106",
+      "lift_pct": 1.992,
+      "extra": 21.88,
+      "counterfactual": 1098.56,
+      "dist_venue_m": 4006.0
+    },
+    {
+      "id": "c16778_-43107",
+      "lift_pct": 1.991,
+      "extra": 0.52,
+      "counterfactual": 26.04,
+      "dist_venue_m": 4170.4
+    },
+    {
+      "id": "c16778_-43109",
+      "lift_pct": 1.99,
+      "extra": 0.67,
+      "counterfactual": 33.68,
+      "dist_venue_m": 4546.5
+    },
+    {
+      "id": "c16778_-43110",
+      "lift_pct": 1.989,
+      "extra": 0.6,
+      "counterfactual": 30.21,
+      "dist_venue_m": 4740.4
+    },
+    {
+      "id": "c16778_-43111",
+      "lift_pct": 1.989,
+      "extra": 94.08,
+      "counterfactual": 4729.81,
+      "dist_venue_m": 4957.7
+    },
+    {
+      "id": "c16778_-43112",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 1169.97,
+      "dist_venue_m": 5131.8
+    },
+    {
+      "id": "c16779_-43095",
+      "lift_pct": 2.051,
+      "extra": 2.33,
+      "counterfactual": 113.52,
+      "dist_venue_m": 2762.4
+    },
+    {
+      "id": "c16779_-43096",
+      "lift_pct": 2.049,
+      "extra": 1.62,
+      "counterfactual": 79.02,
+      "dist_venue_m": 2780.0
+    },
+    {
+      "id": "c16779_-43101",
+      "lift_pct": 2.013,
+      "extra": 4.79,
+      "counterfactual": 238.14,
+      "dist_venue_m": 3153.2
+    },
+    {
+      "id": "c16779_-43102",
+      "lift_pct": 2.006,
+      "extra": 0.64,
+      "counterfactual": 32.1,
+      "dist_venue_m": 3294.1
+    },
+    {
+      "id": "c16779_-43103",
+      "lift_pct": 2.001,
+      "extra": 4.02,
+      "counterfactual": 201.04,
+      "dist_venue_m": 3418.2
+    },
+    {
+      "id": "c16779_-43106",
+      "lift_pct": 1.994,
+      "extra": 18.06,
+      "counterfactual": 906.02,
+      "dist_venue_m": 3798.4
+    },
+    {
+      "id": "c16779_-43107",
+      "lift_pct": 1.992,
+      "extra": 24.13,
+      "counterfactual": 1211.45,
+      "dist_venue_m": 3944.6
+    },
+    {
+      "id": "c16779_-43126",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 17.03,
+      "dist_venue_m": 8192.2
+    },
+    {
+      "id": "c16779_-43127",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 259.91,
+      "dist_venue_m": 8339.7
+    },
+    {
+      "id": "c16779_-43128",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 4.63,
+      "dist_venue_m": 8605.5
+    },
+    {
+      "id": "c16779_-43130",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 338.33,
+      "dist_venue_m": 9149.5
+    },
+    {
+      "id": "c16779_-43131",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 6.79,
+      "dist_venue_m": 9317.8
+    },
+    {
+      "id": "c16779_-43136",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 119.99,
+      "dist_venue_m": 10525.6
+    },
+    {
+      "id": "c16780_-43095",
+      "lift_pct": 1.343,
+      "extra": 1.63,
+      "counterfactual": 121.61,
+      "dist_venue_m": 2413.0
+    },
+    {
+      "id": "c16780_-43105",
+      "lift_pct": 1.999,
+      "extra": 2.87,
+      "counterfactual": 143.78,
+      "dist_venue_m": 3509.2
+    },
+    {
+      "id": "c16780_-43106",
+      "lift_pct": 1.996,
+      "extra": 51.69,
+      "counterfactual": 2589.97,
+      "dist_venue_m": 3654.2
+    },
+    {
+      "id": "c16780_-43107",
+      "lift_pct": 1.993,
+      "extra": 2.29,
+      "counterfactual": 114.67,
+      "dist_venue_m": 3841.0
+    },
+    {
+      "id": "c16781_-43095",
+      "lift_pct": 1.417,
+      "extra": 68.83,
+      "counterfactual": 4855.71,
+      "dist_venue_m": 2246.1
+    },
+    {
+      "id": "c16781_-43103",
+      "lift_pct": 2.034,
+      "extra": 26.26,
+      "counterfactual": 1291.2,
+      "dist_venue_m": 2893.9
+    },
+    {
+      "id": "c16781_-43104",
+      "lift_pct": 2.013,
+      "extra": 0.24,
+      "counterfactual": 12.03,
+      "dist_venue_m": 3151.0
+    },
+    {
+      "id": "c16781_-43105",
+      "lift_pct": 2.006,
+      "extra": 4.89,
+      "counterfactual": 243.86,
+      "dist_venue_m": 3283.4
+    },
+    {
+      "id": "c16781_-43106",
+      "lift_pct": 2.0,
+      "extra": 66.98,
+      "counterfactual": 3349.14,
+      "dist_venue_m": 3461.4
+    },
+    {
+      "id": "c16781_-43107",
+      "lift_pct": 1.996,
+      "extra": 1.82,
+      "counterfactual": 90.93,
+      "dist_venue_m": 3620.6
+    },
+    {
+      "id": "c16781_-43111",
+      "lift_pct": 1.99,
+      "extra": 5.74,
+      "counterfactual": 288.51,
+      "dist_venue_m": 4526.2
+    },
+    {
+      "id": "c16782_-43095",
+      "lift_pct": 1.562,
+      "extra": 52.09,
+      "counterfactual": 3333.94,
+      "dist_venue_m": 2041.2
+    },
+    {
+      "id": "c16782_-43103",
+      "lift_pct": 2.049,
+      "extra": 31.82,
+      "counterfactual": 1552.59,
+      "dist_venue_m": 2774.3
+    },
+    {
+      "id": "c16782_-43106",
+      "lift_pct": 2.005,
+      "extra": 67.15,
+      "counterfactual": 3349.98,
+      "dist_venue_m": 3322.1
+    },
+    {
+      "id": "c16782_-43107",
+      "lift_pct": 1.999,
+      "extra": 8.45,
+      "counterfactual": 422.76,
+      "dist_venue_m": 3495.8
+    },
+    {
+      "id": "c16782_-43108",
+      "lift_pct": 1.995,
+      "extra": 6.4,
+      "counterfactual": 320.79,
+      "dist_venue_m": 3672.1
+    },
+    {
+      "id": "c16782_-43110",
+      "lift_pct": 1.991,
+      "extra": 0.52,
+      "counterfactual": 26.08,
+      "dist_venue_m": 4139.1
+    },
+    {
+      "id": "c16782_-43111",
+      "lift_pct": 1.99,
+      "extra": 72.23,
+      "counterfactual": 3630.11,
+      "dist_venue_m": 4444.4
+    },
+    {
+      "id": "c16782_-43112",
+      "lift_pct": 1.99,
+      "extra": 89.25,
+      "counterfactual": 4485.81,
+      "dist_venue_m": 4557.3
+    },
+    {
+      "id": "c16782_-43131",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 3.69,
+      "dist_venue_m": 9106.5
+    },
+    {
+      "id": "c16782_-43136",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 151.2,
+      "dist_venue_m": 10391.1
+    },
+    {
+      "id": "c16782_-43137",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 5.69,
+      "dist_venue_m": 10598.1
+    },
+    {
+      "id": "c16783_-43097",
+      "lift_pct": 1.892,
+      "extra": 1.19,
+      "counterfactual": 62.81,
+      "dist_venue_m": 1781.0
+    },
+    {
+      "id": "c16783_-43098",
+      "lift_pct": 1.707,
+      "extra": 1.08,
+      "counterfactual": 63.13,
+      "dist_venue_m": 1906.3
+    },
+    {
+      "id": "c16783_-43099",
+      "lift_pct": 1.632,
+      "extra": 0.62,
+      "counterfactual": 37.73,
+      "dist_venue_m": 1970.8
+    },
+    {
+      "id": "c16783_-43103",
+      "lift_pct": 2.079,
+      "extra": 2.72,
+      "counterfactual": 130.84,
+      "dist_venue_m": 2612.4
+    },
+    {
+      "id": "c16783_-43104",
+      "lift_pct": 2.042,
+      "extra": 17.4,
+      "counterfactual": 852.07,
+      "dist_venue_m": 2829.4
+    },
+    {
+      "id": "c16783_-43105",
+      "lift_pct": 2.026,
+      "extra": 38.35,
+      "counterfactual": 1892.32,
+      "dist_venue_m": 2967.6
+    },
+    {
+      "id": "c16783_-43106",
+      "lift_pct": 2.011,
+      "extra": 78.78,
+      "counterfactual": 3916.44,
+      "dist_venue_m": 3174.0
+    },
+    {
+      "id": "c16783_-43107",
+      "lift_pct": 2.002,
+      "extra": 20.13,
+      "counterfactual": 1005.18,
+      "dist_venue_m": 3386.1
+    },
+    {
+      "id": "c16783_-43111",
+      "lift_pct": 1.99,
+      "extra": 9.59,
+      "counterfactual": 481.81,
+      "dist_venue_m": 4320.0
+    },
+    {
+      "id": "c16783_-43112",
+      "lift_pct": 1.99,
+      "extra": 0.47,
+      "counterfactual": 23.72,
+      "dist_venue_m": 4461.9
+    },
+    {
+      "id": "c16783_-43120",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 3644.33,
+      "dist_venue_m": 6319.4
+    },
+    {
+      "id": "c16783_-43122",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 304.69,
+      "dist_venue_m": 6950.2
+    },
+    {
+      "id": "c16783_-43123",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 313.72,
+      "dist_venue_m": 7081.6
+    },
+    {
+      "id": "c16783_-43125",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 5.41,
+      "dist_venue_m": 7595.6
+    },
+    {
+      "id": "c16783_-43126",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 134.18,
+      "dist_venue_m": 7869.8
+    },
+    {
+      "id": "c16783_-43127",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 258.41,
+      "dist_venue_m": 8077.9
+    },
+    {
+      "id": "c16783_-43128",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 60.1,
+      "dist_venue_m": 8331.8
+    },
+    {
+      "id": "c16784_-43097",
+      "lift_pct": 2.311,
+      "extra": 12.36,
+      "counterfactual": 534.89,
+      "dist_venue_m": 1590.2
+    },
+    {
+      "id": "c16784_-43098",
+      "lift_pct": 2.199,
+      "extra": 33.77,
+      "counterfactual": 1535.44,
+      "dist_venue_m": 1632.8
+    },
+    {
+      "id": "c16784_-43099",
+      "lift_pct": 1.952,
+      "extra": 0.46,
+      "counterfactual": 23.53,
+      "dist_venue_m": 1747.4
+    },
+    {
+      "id": "c16784_-43100",
+      "lift_pct": 1.676,
+      "extra": 2.09,
+      "counterfactual": 124.61,
+      "dist_venue_m": 1931.9
+    },
+    {
+      "id": "c16784_-43102",
+      "lift_pct": 1.46,
+      "extra": 21.61,
+      "counterfactual": 1479.91,
+      "dist_venue_m": 2174.4
+    },
+    {
+      "id": "c16784_-43103",
+      "lift_pct": 1.343,
+      "extra": 7.44,
+      "counterfactual": 553.85,
+      "dist_venue_m": 2413.1
+    },
+    {
+      "id": "c16784_-43104",
+      "lift_pct": 2.073,
+      "extra": 63.99,
+      "counterfactual": 3086.76,
+      "dist_venue_m": 2640.1
+    },
+    {
+      "id": "c16784_-43105",
+      "lift_pct": 2.036,
+      "extra": 52.0,
+      "counterfactual": 2553.3,
+      "dist_venue_m": 2872.6
+    },
+    {
+      "id": "c16784_-43106",
+      "lift_pct": 2.018,
+      "extra": 167.97,
+      "counterfactual": 8323.82,
+      "dist_venue_m": 3071.6
+    },
+    {
+      "id": "c16784_-43107",
+      "lift_pct": 2.007,
+      "extra": 79.28,
+      "counterfactual": 3950.71,
+      "dist_venue_m": 3268.7
+    },
+    {
+      "id": "c16784_-43110",
+      "lift_pct": 1.992,
+      "extra": 63.04,
+      "counterfactual": 3164.87,
+      "dist_venue_m": 4005.2
+    },
+    {
+      "id": "c16784_-43111",
+      "lift_pct": 1.991,
+      "extra": 4.4,
+      "counterfactual": 221.05,
+      "dist_venue_m": 4169.3
+    },
+    {
+      "id": "c16784_-43117",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 219.77,
+      "dist_venue_m": 5536.5
+    },
+    {
+      "id": "c16784_-43118",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 79.21,
+      "dist_venue_m": 5786.8
+    },
+    {
+      "id": "c16784_-43122",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 729.04,
+      "dist_venue_m": 6872.7
+    },
+    {
+      "id": "c16784_-43123",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 1426.16,
+      "dist_venue_m": 7054.6
+    },
+    {
+      "id": "c16785_-43095",
+      "lift_pct": 4.276,
+      "extra": 24.82,
+      "counterfactual": 580.3,
+      "dist_venue_m": 1180.9
+    },
+    {
+      "id": "c16785_-43097",
+      "lift_pct": 3.21,
+      "extra": 162.22,
+      "counterfactual": 5054.06,
+      "dist_venue_m": 1351.6
+    },
+    {
+      "id": "c16785_-43100",
+      "lift_pct": 2.117,
+      "extra": 1.89,
+      "counterfactual": 89.22,
+      "dist_venue_m": 1667.5
+    },
+    {
+      "id": "c16785_-43101",
+      "lift_pct": 1.731,
+      "extra": 0.94,
+      "counterfactual": 54.42,
+      "dist_venue_m": 1887.9
+    },
+    {
+      "id": "c16785_-43102",
+      "lift_pct": 1.491,
+      "extra": 29.65,
+      "counterfactual": 1988.42,
+      "dist_venue_m": 2129.2
+    },
+    {
+      "id": "c16785_-43103",
+      "lift_pct": 1.394,
+      "extra": 3.52,
+      "counterfactual": 252.46,
+      "dist_venue_m": 2291.7
+    },
+    {
+      "id": "c16785_-43104",
+      "lift_pct": 1.331,
+      "extra": 0.93,
+      "counterfactual": 70.05,
+      "dist_venue_m": 2446.8
+    },
+    {
+      "id": "c16785_-43105",
+      "lift_pct": 2.052,
+      "extra": 94.02,
+      "counterfactual": 4581.29,
+      "dist_venue_m": 2755.3
+    },
+    {
+      "id": "c16785_-43106",
+      "lift_pct": 2.029,
+      "extra": 32.52,
+      "counterfactual": 1602.42,
+      "dist_venue_m": 2938.1
+    },
+    {
+      "id": "c16785_-43107",
+      "lift_pct": 2.013,
+      "extra": 20.9,
+      "counterfactual": 1038.43,
+      "dist_venue_m": 3152.9
+    },
+    {
+      "id": "c16785_-43108",
+      "lift_pct": 2.004,
+      "extra": 2.74,
+      "counterfactual": 136.48,
+      "dist_venue_m": 3334.7
+    },
+    {
+      "id": "c16785_-43109",
+      "lift_pct": 1.995,
+      "extra": 40.59,
+      "counterfactual": 2034.26,
+      "dist_venue_m": 3686.3
+    },
+    {
+      "id": "c16785_-43110",
+      "lift_pct": 1.993,
+      "extra": 10.83,
+      "counterfactual": 543.15,
+      "dist_venue_m": 3833.6
+    },
+    {
+      "id": "c16785_-43111",
+      "lift_pct": 1.991,
+      "extra": 0.08,
+      "counterfactual": 4.21,
+      "dist_venue_m": 4060.3
+    },
+    {
+      "id": "c16785_-43118",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 1653.53,
+      "dist_venue_m": 5745.9
+    },
+    {
+      "id": "c16786_-43100",
+      "lift_pct": 2.358,
+      "extra": 0.2,
+      "counterfactual": 8.29,
+      "dist_venue_m": 1573.6
+    },
+    {
+      "id": "c16786_-43101",
+      "lift_pct": 2.175,
+      "extra": 46.94,
+      "counterfactual": 2158.46,
+      "dist_venue_m": 1642.9
+    },
+    {
+      "id": "c16786_-43102",
+      "lift_pct": 1.745,
+      "extra": 20.8,
+      "counterfactual": 1192.19,
+      "dist_venue_m": 1877.2
+    },
+    {
+      "id": "c16786_-43104",
+      "lift_pct": 1.342,
+      "extra": 22.98,
+      "counterfactual": 1712.66,
+      "dist_venue_m": 2416.8
+    },
+    {
+      "id": "c16786_-43105",
+      "lift_pct": 2.077,
+      "extra": 212.84,
+      "counterfactual": 10247.42,
+      "dist_venue_m": 2622.1
+    },
+    {
+      "id": "c16786_-43106",
+      "lift_pct": 2.04,
+      "extra": 44.2,
+      "counterfactual": 2166.59,
+      "dist_venue_m": 2842.7
+    },
+    {
+      "id": "c16786_-43107",
+      "lift_pct": 2.019,
+      "extra": 2.06,
+      "counterfactual": 102.02,
+      "dist_venue_m": 3052.4
+    },
+    {
+      "id": "c16786_-43108",
+      "lift_pct": 2.003,
+      "extra": 7.64,
+      "counterfactual": 381.49,
+      "dist_venue_m": 3358.2
+    },
+    {
+      "id": "c16786_-43109",
+      "lift_pct": 1.997,
+      "extra": 53.45,
+      "counterfactual": 2676.95,
+      "dist_venue_m": 3610.6
+    },
+    {
+      "id": "c16786_-43115",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 2010.2,
+      "dist_venue_m": 5022.3
+    },
+    {
+      "id": "c16786_-43116",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 135.84,
+      "dist_venue_m": 5269.3
+    },
+    {
+      "id": "c16786_-43117",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 2590.08,
+      "dist_venue_m": 5516.1
+    },
+    {
+      "id": "c16786_-43118",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 797.04,
+      "dist_venue_m": 5705.2
+    },
+    {
+      "id": "c16787_-43096",
+      "lift_pct": 11.945,
+      "extra": 60.67,
+      "counterfactual": 507.91,
+      "dist_venue_m": 749.5
+    },
+    {
+      "id": "c16787_-43100",
+      "lift_pct": 3.114,
+      "extra": 4.68,
+      "counterfactual": 150.18,
+      "dist_venue_m": 1371.2
+    },
+    {
+      "id": "c16787_-43101",
+      "lift_pct": 2.383,
+      "extra": 64.29,
+      "counterfactual": 2698.52,
+      "dist_venue_m": 1565.0
+    },
+    {
+      "id": "c16787_-43102",
+      "lift_pct": 1.805,
+      "extra": 58.43,
+      "counterfactual": 3237.66,
+      "dist_venue_m": 1835.1
+    },
+    {
+      "id": "c16787_-43103",
+      "lift_pct": 1.553,
+      "extra": 123.11,
+      "counterfactual": 7927.15,
+      "dist_venue_m": 2051.9
+    },
+    {
+      "id": "c16787_-43104",
+      "lift_pct": 1.395,
+      "extra": 6.23,
+      "counterfactual": 446.76,
+      "dist_venue_m": 2290.6
+    },
+    {
+      "id": "c16787_-43105",
+      "lift_pct": 2.093,
+      "extra": 121.43,
+      "counterfactual": 5801.01,
+      "dist_venue_m": 2553.2
+    },
+    {
+      "id": "c16787_-43106",
+      "lift_pct": 2.055,
+      "extra": 54.69,
+      "counterfactual": 2661.81,
+      "dist_venue_m": 2740.8
+    },
+    {
+      "id": "c16787_-43107",
+      "lift_pct": 2.02,
+      "extra": 70.36,
+      "counterfactual": 3482.72,
+      "dist_venue_m": 3041.0
+    },
+    {
+      "id": "c16787_-43108",
+      "lift_pct": 2.01,
+      "extra": 2.61,
+      "counterfactual": 129.68,
+      "dist_venue_m": 3203.3
+    },
+    {
+      "id": "c16787_-43110",
+      "lift_pct": 1.995,
+      "extra": 17.44,
+      "counterfactual": 874.18,
+      "dist_venue_m": 3731.7
+    },
+    {
+      "id": "c16787_-43111",
+      "lift_pct": 1.992,
+      "extra": 1.78,
+      "counterfactual": 89.46,
+      "dist_venue_m": 3996.8
+    },
+    {
+      "id": "c16787_-43112",
+      "lift_pct": 1.99,
+      "extra": 7.73,
+      "counterfactual": 388.6,
+      "dist_venue_m": 4242.8
+    },
+    {
+      "id": "c16787_-43138",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 552.32,
+      "dist_venue_m": 10637.9
+    },
+    {
+      "id": "c16788_-43096",
+      "lift_pct": 18.63,
+      "extra": 116.51,
+      "counterfactual": 625.38,
+      "dist_venue_m": 541.4
+    },
+    {
+      "id": "c16788_-43100",
+      "lift_pct": 3.534,
+      "extra": 18.34,
+      "counterfactual": 519.08,
+      "dist_venue_m": 1291.6
+    },
+    {
+      "id": "c16788_-43101",
+      "lift_pct": 2.75,
+      "extra": 119.66,
+      "counterfactual": 4351.86,
+      "dist_venue_m": 1456.1
+    },
+    {
+      "id": "c16788_-43102",
+      "lift_pct": 1.909,
+      "extra": 1.95,
+      "counterfactual": 102.18,
+      "dist_venue_m": 1771.1
+    },
+    {
+      "id": "c16788_-43103",
+      "lift_pct": 1.596,
+      "extra": 91.64,
+      "counterfactual": 5741.11,
+      "dist_venue_m": 2005.4
+    },
+    {
+      "id": "c16788_-43104",
+      "lift_pct": 1.437,
+      "extra": 27.06,
+      "counterfactual": 1883.24,
+      "dist_venue_m": 2212.3
+    },
+    {
+      "id": "c16788_-43105",
+      "lift_pct": 1.325,
+      "extra": 10.11,
+      "counterfactual": 762.44,
+      "dist_venue_m": 2465.1
+    },
+    {
+      "id": "c16788_-43106",
+      "lift_pct": 2.058,
+      "extra": 120.28,
+      "counterfactual": 5844.03,
+      "dist_venue_m": 2719.2
+    },
+    {
+      "id": "c16788_-43107",
+      "lift_pct": 2.03,
+      "extra": 45.28,
+      "counterfactual": 2230.4,
+      "dist_venue_m": 2932.2
+    },
+    {
+      "id": "c16788_-43110",
+      "lift_pct": 1.995,
+      "extra": 2.56,
+      "counterfactual": 128.2,
+      "dist_venue_m": 3714.8
+    },
+    {
+      "id": "c16788_-43112",
+      "lift_pct": 1.99,
+      "extra": 1.81,
+      "counterfactual": 90.88,
+      "dist_venue_m": 4270.7
+    },
+    {
+      "id": "c16788_-43113",
+      "lift_pct": 1.99,
+      "extra": 1.56,
+      "counterfactual": 78.18,
+      "dist_venue_m": 4433.7
+    },
+    {
+      "id": "c16788_-43117",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 46.65,
+      "dist_venue_m": 5444.4
+    },
+    {
+      "id": "c16789_-43097",
+      "lift_pct": 31.544,
+      "extra": 377.74,
+      "counterfactual": 1197.49,
+      "dist_venue_m": 471.8
+    },
+    {
+      "id": "c16789_-43098",
+      "lift_pct": 13.551,
+      "extra": 278.44,
+      "counterfactual": 2054.77,
+      "dist_venue_m": 687.7
+    },
+    {
+      "id": "c16789_-43099",
+      "lift_pct": 7.871,
+      "extra": 4.8,
+      "counterfactual": 61.0,
+      "dist_venue_m": 976.4
+    },
+    {
+      "id": "c16789_-43100",
+      "lift_pct": 4.431,
+      "extra": 34.24,
+      "counterfactual": 772.66,
+      "dist_venue_m": 1161.3
+    },
+    {
+      "id": "c16789_-43101",
+      "lift_pct": 2.896,
+      "extra": 787.8,
+      "counterfactual": 27198.37,
+      "dist_venue_m": 1419.7
+    },
+    {
+      "id": "c16789_-43102",
+      "lift_pct": 2.084,
+      "extra": 133.74,
+      "counterfactual": 6418.07,
+      "dist_venue_m": 1682.3
+    },
+    {
+      "id": "c16789_-43103",
+      "lift_pct": 1.683,
+      "extra": 128.74,
+      "counterfactual": 7650.34,
+      "dist_venue_m": 1925.9
+    },
+    {
+      "id": "c16789_-43104",
+      "lift_pct": 1.454,
+      "extra": 51.45,
+      "counterfactual": 3538.01,
+      "dist_venue_m": 2183.4
+    },
+    {
+      "id": "c16789_-43105",
+      "lift_pct": 1.333,
+      "extra": 91.72,
+      "counterfactual": 6878.93,
+      "dist_venue_m": 2440.8
+    },
+    {
+      "id": "c16789_-43106",
+      "lift_pct": 2.067,
+      "extra": 75.85,
+      "counterfactual": 3669.08,
+      "dist_venue_m": 2669.5
+    },
+    {
+      "id": "c16789_-43107",
+      "lift_pct": 2.029,
+      "extra": 37.6,
+      "counterfactual": 1853.35,
+      "dist_venue_m": 2942.5
+    },
+    {
+      "id": "c16789_-43108",
+      "lift_pct": 2.011,
+      "extra": 13.76,
+      "counterfactual": 684.28,
+      "dist_venue_m": 3185.1
+    },
+    {
+      "id": "c16789_-43112",
+      "lift_pct": 1.99,
+      "extra": 3.32,
+      "counterfactual": 166.88,
+      "dist_venue_m": 4250.5
+    },
+    {
+      "id": "c16789_-43113",
+      "lift_pct": 1.99,
+      "extra": 2.78,
+      "counterfactual": 139.92,
+      "dist_venue_m": 4356.8
+    },
+    {
+      "id": "c16789_-43114",
+      "lift_pct": 1.989,
+      "extra": 0.02,
+      "counterfactual": 1.1,
+      "dist_venue_m": 4713.3
+    },
+    {
+      "id": "c16789_-43115",
+      "lift_pct": 1.989,
+      "extra": 0.68,
+      "counterfactual": 34.26,
+      "dist_venue_m": 4955.8
+    },
+    {
+      "id": "c16789_-43121",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 29.23,
+      "dist_venue_m": 6433.7
+    },
+    {
+      "id": "c16789_-43127",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 3.34,
+      "dist_venue_m": 7893.8
+    },
+    {
+      "id": "c16789_-43132",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 33.17,
+      "dist_venue_m": 9185.0
+    },
+    {
+      "id": "c16789_-43133",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 15.4,
+      "dist_venue_m": 9442.8
+    },
+    {
+      "id": "c16789_-43134",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 6.23,
+      "dist_venue_m": 9613.0
+    },
+    {
+      "id": "c16790_-43096",
+      "lift_pct": 88.16,
+      "extra": 589.42,
+      "counterfactual": 668.58,
+      "dist_venue_m": 213.7
+    },
+    {
+      "id": "c16790_-43097",
+      "lift_pct": 35.421,
+      "extra": 406.54,
+      "counterfactual": 1147.73,
+      "dist_venue_m": 408.3
+    },
+    {
+      "id": "c16790_-43098",
+      "lift_pct": 14.556,
+      "extra": 533.31,
+      "counterfactual": 3663.93,
+      "dist_venue_m": 653.7
+    },
+    {
+      "id": "c16790_-43099",
+      "lift_pct": 8.964,
+      "extra": 25.26,
+      "counterfactual": 281.75,
+      "dist_venue_m": 901.2
+    },
+    {
+      "id": "c16790_-43100",
+      "lift_pct": 4.168,
+      "extra": 114.05,
+      "counterfactual": 2736.46,
+      "dist_venue_m": 1195.3
+    },
+    {
+      "id": "c16790_-43101",
+      "lift_pct": 2.97,
+      "extra": 61.12,
+      "counterfactual": 2058.03,
+      "dist_venue_m": 1402.7
+    },
+    {
+      "id": "c16790_-43102",
+      "lift_pct": 2.125,
+      "extra": 50.64,
+      "counterfactual": 2383.56,
+      "dist_venue_m": 1664.1
+    },
+    {
+      "id": "c16790_-43103",
+      "lift_pct": 1.7,
+      "extra": 33.63,
+      "counterfactual": 1977.82,
+      "dist_venue_m": 1911.5
+    },
+    {
+      "id": "c16790_-43104",
+      "lift_pct": 1.459,
+      "extra": 39.27,
+      "counterfactual": 2691.15,
+      "dist_venue_m": 2175.6
+    },
+    {
+      "id": "c16790_-43105",
+      "lift_pct": 1.373,
+      "extra": 21.12,
+      "counterfactual": 1538.57,
+      "dist_venue_m": 2337.6
+    },
+    {
+      "id": "c16790_-43107",
+      "lift_pct": 2.03,
+      "extra": 123.76,
+      "counterfactual": 6097.68,
+      "dist_venue_m": 2935.1
+    },
+    {
+      "id": "c16790_-43108",
+      "lift_pct": 2.013,
+      "extra": 4.87,
+      "counterfactual": 241.79,
+      "dist_venue_m": 3142.9
+    },
+    {
+      "id": "c16790_-43111",
+      "lift_pct": 1.992,
+      "extra": 0.36,
+      "counterfactual": 17.91,
+      "dist_venue_m": 3914.0
+    },
+    {
+      "id": "c16790_-43113",
+      "lift_pct": 1.99,
+      "extra": 0.32,
+      "counterfactual": 15.94,
+      "dist_venue_m": 4391.3
+    },
+    {
+      "id": "c16791_-43096",
+      "lift_pct": 45.08,
+      "extra": 817.36,
+      "counterfactual": 1813.15,
+      "dist_venue_m": 288.4
+    },
+    {
+      "id": "c16791_-43097",
+      "lift_pct": 30.63,
+      "extra": 44.54,
+      "counterfactual": 145.42,
+      "dist_venue_m": 488.6
+    },
+    {
+      "id": "c16791_-43098",
+      "lift_pct": 12.563,
+      "extra": 136.51,
+      "counterfactual": 1086.6,
+      "dist_venue_m": 724.5
+    },
+    {
+      "id": "c16791_-43099",
+      "lift_pct": 7.86,
+      "extra": 16.95,
+      "counterfactual": 215.63,
+      "dist_venue_m": 977.2
+    },
+    {
+      "id": "c16791_-43100",
+      "lift_pct": 3.986,
+      "extra": 539.66,
+      "counterfactual": 13539.49,
+      "dist_venue_m": 1220.6
+    },
+    {
+      "id": "c16791_-43101",
+      "lift_pct": 2.755,
+      "extra": 58.23,
+      "counterfactual": 2113.35,
+      "dist_venue_m": 1454.7
+    },
+    {
+      "id": "c16791_-43102",
+      "lift_pct": 2.043,
+      "extra": 188.15,
+      "counterfactual": 9207.67,
+      "dist_venue_m": 1701.2
+    },
+    {
+      "id": "c16791_-43103",
+      "lift_pct": 1.645,
+      "extra": 94.29,
+      "counterfactual": 5732.98,
+      "dist_venue_m": 1958.9
+    },
+    {
+      "id": "c16791_-43104",
+      "lift_pct": 1.459,
+      "extra": 14.04,
+      "counterfactual": 962.43,
+      "dist_venue_m": 2175.9
+    },
+    {
+      "id": "c16791_-43105",
+      "lift_pct": 1.332,
+      "extra": 166.34,
+      "counterfactual": 12484.81,
+      "dist_venue_m": 2443.7
+    },
+    {
+      "id": "c16791_-43106",
+      "lift_pct": 2.056,
+      "extra": 2.71,
+      "counterfactual": 131.62,
+      "dist_venue_m": 2729.6
+    },
+    {
+      "id": "c16791_-43107",
+      "lift_pct": 2.036,
+      "extra": 30.34,
+      "counterfactual": 1490.48,
+      "dist_venue_m": 2880.0
+    },
+    {
+      "id": "c16791_-43110",
+      "lift_pct": 1.994,
+      "extra": 193.34,
+      "counterfactual": 9694.49,
+      "dist_venue_m": 3745.8
+    },
+    {
+      "id": "c16791_-43113",
+      "lift_pct": 1.99,
+      "extra": 0.01,
+      "counterfactual": 0.61,
+      "dist_venue_m": 4377.1
+    },
+    {
+      "id": "c16791_-43117",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 140.76,
+      "dist_venue_m": 5433.1
+    },
+    {
+      "id": "c16791_-43118",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 434.34,
+      "dist_venue_m": 5636.5
+    },
+    {
+      "id": "c16791_-43119",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 7813.18,
+      "dist_venue_m": 5910.5
+    },
+    {
+      "id": "c16791_-43120",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 72.66,
+      "dist_venue_m": 6165.3
+    },
+    {
+      "id": "c16791_-43121",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 311.16,
+      "dist_venue_m": 6437.9
+    },
+    {
+      "id": "c16791_-43122",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 33.49,
+      "dist_venue_m": 6617.7
+    },
+    {
+      "id": "c16791_-43123",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 536.91,
+      "dist_venue_m": 6938.0
+    },
+    {
+      "id": "c16791_-43124",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 6.12,
+      "dist_venue_m": 7178.7
+    },
+    {
+      "id": "c16791_-43125",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 3039.24,
+      "dist_venue_m": 7449.2
+    },
+    {
+      "id": "c16791_-43126",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 18.41,
+      "dist_venue_m": 7667.7
+    },
+    {
+      "id": "c16791_-43127",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 40.38,
+      "dist_venue_m": 7915.3
+    },
+    {
+      "id": "c16791_-43128",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 4.25,
+      "dist_venue_m": 8157.8
+    },
+    {
+      "id": "c16791_-43129",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 27.07,
+      "dist_venue_m": 8427.1
+    },
+    {
+      "id": "c16791_-43132",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 3.11,
+      "dist_venue_m": 9133.5
+    },
+    {
+      "id": "c16792_-43096",
+      "lift_pct": 18.842,
+      "extra": 73.3,
+      "counterfactual": 389.03,
+      "dist_venue_m": 536.4
+    },
+    {
+      "id": "c16792_-43097",
+      "lift_pct": 14.661,
+      "extra": 1315.68,
+      "counterfactual": 8973.94,
+      "dist_venue_m": 650.3
+    },
+    {
+      "id": "c16792_-43098",
+      "lift_pct": 9.544,
+      "extra": 152.73,
+      "counterfactual": 1600.28,
+      "dist_venue_m": 866.6
+    },
+    {
+      "id": "c16792_-43099",
+      "lift_pct": 5.654,
+      "extra": 10.56,
+      "counterfactual": 186.85,
+      "dist_venue_m": 1033.4
+    },
+    {
+      "id": "c16792_-43100",
+      "lift_pct": 3.525,
+      "extra": 36.96,
+      "counterfactual": 1048.43,
+      "dist_venue_m": 1293.0
+    },
+    {
+      "id": "c16792_-43101",
+      "lift_pct": 2.385,
+      "extra": 776.26,
+      "counterfactual": 32543.42,
+      "dist_venue_m": 1564.0
+    },
+    {
+      "id": "c16792_-43102",
+      "lift_pct": 1.983,
+      "extra": 432.03,
+      "counterfactual": 21785.0,
+      "dist_venue_m": 1731.0
+    },
+    {
+      "id": "c16792_-43103",
+      "lift_pct": 1.639,
+      "extra": 124.69,
+      "counterfactual": 7608.46,
+      "dist_venue_m": 1964.4
+    },
+    {
+      "id": "c16792_-43104",
+      "lift_pct": 1.426,
+      "extra": 62.12,
+      "counterfactual": 4354.56,
+      "dist_venue_m": 2229.8
+    },
+    {
+      "id": "c16792_-43105",
+      "lift_pct": 1.318,
+      "extra": 84.75,
+      "counterfactual": 6430.54,
+      "dist_venue_m": 2489.3
+    },
+    {
+      "id": "c16792_-43106",
+      "lift_pct": 2.059,
+      "extra": 168.97,
+      "counterfactual": 8205.52,
+      "dist_venue_m": 2713.3
+    },
+    {
+      "id": "c16792_-43107",
+      "lift_pct": 2.034,
+      "extra": 23.53,
+      "counterfactual": 1156.68,
+      "dist_venue_m": 2894.3
+    },
+    {
+      "id": "c16792_-43110",
+      "lift_pct": 1.994,
+      "extra": 0.58,
+      "counterfactual": 29.32,
+      "dist_venue_m": 3787.9
+    },
+    {
+      "id": "c16792_-43111",
+      "lift_pct": 1.993,
+      "extra": 3.27,
+      "counterfactual": 164.29,
+      "dist_venue_m": 3881.2
+    },
+    {
+      "id": "c16792_-43113",
+      "lift_pct": 1.99,
+      "extra": 1.39,
+      "counterfactual": 69.78,
+      "dist_venue_m": 4460.4
+    },
+    {
+      "id": "c16792_-43115",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 5562.26,
+      "dist_venue_m": 5005.2
+    },
+    {
+      "id": "c16792_-43116",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 191.78,
+      "dist_venue_m": 5167.1
+    },
+    {
+      "id": "c16792_-43117",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 828.44,
+      "dist_venue_m": 5415.5
+    },
+    {
+      "id": "c16792_-43118",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 1.69,
+      "dist_venue_m": 5621.9
+    },
+    {
+      "id": "c16792_-43120",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 489.96,
+      "dist_venue_m": 6223.9
+    },
+    {
+      "id": "c16792_-43121",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 8.33,
+      "dist_venue_m": 6442.0
+    },
+    {
+      "id": "c16792_-43122",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 1537.85,
+      "dist_venue_m": 6684.0
+    },
+    {
+      "id": "c16792_-43123",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 10.82,
+      "dist_venue_m": 6923.3
+    },
+    {
+      "id": "c16792_-43124",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 13.29,
+      "dist_venue_m": 7172.5
+    },
+    {
+      "id": "c16792_-43127",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 14.07,
+      "dist_venue_m": 7905.0
+    },
+    {
+      "id": "c16792_-43128",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 72.03,
+      "dist_venue_m": 8168.3
+    },
+    {
+      "id": "c16792_-43129",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 315.04,
+      "dist_venue_m": 8431.7
+    },
+    {
+      "id": "c16793_-43097",
+      "lift_pct": 9.385,
+      "extra": 5.0,
+      "counterfactual": 53.33,
+      "dist_venue_m": 875.7
+    },
+    {
+      "id": "c16793_-43098",
+      "lift_pct": 5.75,
+      "extra": 159.99,
+      "counterfactual": 2782.49,
+      "dist_venue_m": 1024.9
+    },
+    {
+      "id": "c16793_-43099",
+      "lift_pct": 4.048,
+      "extra": 90.86,
+      "counterfactual": 2244.52,
+      "dist_venue_m": 1211.8
+    },
+    {
+      "id": "c16793_-43100",
+      "lift_pct": 2.831,
+      "extra": 629.21,
+      "counterfactual": 22222.62,
+      "dist_venue_m": 1435.4
+    },
+    {
+      "id": "c16793_-43101",
+      "lift_pct": 2.203,
+      "extra": 368.17,
+      "counterfactual": 16714.56,
+      "dist_venue_m": 1631.4
+    },
+    {
+      "id": "c16793_-43102",
+      "lift_pct": 1.86,
+      "extra": 511.96,
+      "counterfactual": 27528.52,
+      "dist_venue_m": 1800.1
+    },
+    {
+      "id": "c16793_-43103",
+      "lift_pct": 1.555,
+      "extra": 508.91,
+      "counterfactual": 32721.47,
+      "dist_venue_m": 2049.3
+    },
+    {
+      "id": "c16793_-43104",
+      "lift_pct": 1.399,
+      "extra": 249.93,
+      "counterfactual": 17871.01,
+      "dist_venue_m": 2282.4
+    },
+    {
+      "id": "c16793_-43105",
+      "lift_pct": 2.092,
+      "extra": 203.91,
+      "counterfactual": 9749.03,
+      "dist_venue_m": 2559.9
+    },
+    {
+      "id": "c16793_-43106",
+      "lift_pct": 2.049,
+      "extra": 220.23,
+      "counterfactual": 10750.15,
+      "dist_venue_m": 2779.6
+    },
+    {
+      "id": "c16793_-43107",
+      "lift_pct": 2.025,
+      "extra": 138.55,
+      "counterfactual": 6842.87,
+      "dist_venue_m": 2987.0
+    },
+    {
+      "id": "c16793_-43108",
+      "lift_pct": 2.007,
+      "extra": 67.87,
+      "counterfactual": 3382.31,
+      "dist_venue_m": 3274.1
+    },
+    {
+      "id": "c16793_-43109",
+      "lift_pct": 1.997,
+      "extra": 34.04,
+      "counterfactual": 1704.41,
+      "dist_venue_m": 3572.9
+    },
+    {
+      "id": "c16793_-43110",
+      "lift_pct": 1.995,
+      "extra": 239.71,
+      "counterfactual": 12017.3,
+      "dist_venue_m": 3720.9
+    },
+    {
+      "id": "c16793_-43111",
+      "lift_pct": 1.992,
+      "extra": 42.67,
+      "counterfactual": 2141.72,
+      "dist_venue_m": 3948.6
+    },
+    {
+      "id": "c16793_-43112",
+      "lift_pct": 1.99,
+      "extra": 0.03,
+      "counterfactual": 1.56,
+      "dist_venue_m": 4246.3
+    },
+    {
+      "id": "c16793_-43113",
+      "lift_pct": 1.99,
+      "extra": 35.07,
+      "counterfactual": 1762.56,
+      "dist_venue_m": 4528.5
+    },
+    {
+      "id": "c16793_-43117",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 90.91,
+      "dist_venue_m": 5558.1
+    },
+    {
+      "id": "c16793_-43118",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 115.86,
+      "dist_venue_m": 5708.2
+    },
+    {
+      "id": "c16793_-43122",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 346.79,
+      "dist_venue_m": 6675.4
+    },
+    {
+      "id": "c16794_-43096",
+      "lift_pct": 5.69,
+      "extra": 47.39,
+      "counterfactual": 832.89,
+      "dist_venue_m": 1030.2
+    },
+    {
+      "id": "c16794_-43097",
+      "lift_pct": 4.742,
+      "extra": 426.03,
+      "counterfactual": 8984.75,
+      "dist_venue_m": 1124.6
+    },
+    {
+      "id": "c16794_-43098",
+      "lift_pct": 4.037,
+      "extra": 261.08,
+      "counterfactual": 6466.32,
+      "dist_venue_m": 1213.3
+    },
+    {
+      "id": "c16794_-43099",
+      "lift_pct": 3.1,
+      "extra": 368.23,
+      "counterfactual": 11879.39,
+      "dist_venue_m": 1374.2
+    },
+    {
+      "id": "c16794_-43100",
+      "lift_pct": 2.361,
+      "extra": 568.64,
+      "counterfactual": 24083.66,
+      "dist_venue_m": 1572.3
+    },
+    {
+      "id": "c16794_-43101",
+      "lift_pct": 1.974,
+      "extra": 212.64,
+      "counterfactual": 10771.41,
+      "dist_venue_m": 1735.7
+    },
+    {
+      "id": "c16794_-43102",
+      "lift_pct": 1.663,
+      "extra": 756.14,
+      "counterfactual": 45477.01,
+      "dist_venue_m": 1943.0
+    },
+    {
+      "id": "c16794_-43103",
+      "lift_pct": 1.468,
+      "extra": 429.44,
+      "counterfactual": 29252.92,
+      "dist_venue_m": 2162.4
+    },
+    {
+      "id": "c16794_-43104",
+      "lift_pct": 1.365,
+      "extra": 139.19,
+      "counterfactual": 10200.93,
+      "dist_venue_m": 2357.3
+    },
+    {
+      "id": "c16794_-43105",
+      "lift_pct": 2.077,
+      "extra": 115.23,
+      "counterfactual": 5549.4,
+      "dist_venue_m": 2624.3
+    },
+    {
+      "id": "c16794_-43106",
+      "lift_pct": 2.038,
+      "extra": 87.46,
+      "counterfactual": 4290.9,
+      "dist_venue_m": 2856.7
+    },
+    {
+      "id": "c16794_-43107",
+      "lift_pct": 2.016,
+      "extra": 80.79,
+      "counterfactual": 4007.26,
+      "dist_venue_m": 3097.4
+    },
+    {
+      "id": "c16794_-43108",
+      "lift_pct": 2.005,
+      "extra": 41.77,
+      "counterfactual": 2083.86,
+      "dist_venue_m": 3322.4
+    },
+    {
+      "id": "c16794_-43109",
+      "lift_pct": 1.998,
+      "extra": 18.54,
+      "counterfactual": 927.92,
+      "dist_venue_m": 3525.8
+    },
+    {
+      "id": "c16794_-43110",
+      "lift_pct": 1.995,
+      "extra": 0.29,
+      "counterfactual": 14.4,
+      "dist_venue_m": 3708.1
+    },
+    {
+      "id": "c16794_-43111",
+      "lift_pct": 1.991,
+      "extra": 24.17,
+      "counterfactual": 1213.5,
+      "dist_venue_m": 4044.2
+    },
+    {
+      "id": "c16794_-43113",
+      "lift_pct": 1.99,
+      "extra": 3.27,
+      "counterfactual": 164.38,
+      "dist_venue_m": 4598.2
+    },
+    {
+      "id": "c16794_-43114",
+      "lift_pct": 1.989,
+      "extra": 0.06,
+      "counterfactual": 2.85,
+      "dist_venue_m": 4754.3
+    },
+    {
+      "id": "c16794_-43115",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 17.94,
+      "dist_venue_m": 5089.3
+    },
+    {
+      "id": "c16794_-43116",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 20.76,
+      "dist_venue_m": 5229.6
+    },
+    {
+      "id": "c16794_-43117",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 92.31,
+      "dist_venue_m": 5485.4
+    },
+    {
+      "id": "c16794_-43118",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 17.26,
+      "dist_venue_m": 5695.1
+    },
+    {
+      "id": "c16795_-43096",
+      "lift_pct": 3.594,
+      "extra": 97.13,
+      "counterfactual": 2702.88,
+      "dist_venue_m": 1281.4
+    },
+    {
+      "id": "c16795_-43097",
+      "lift_pct": 3.287,
+      "extra": 99.47,
+      "counterfactual": 3025.93,
+      "dist_venue_m": 1336.4
+    },
+    {
+      "id": "c16795_-43098",
+      "lift_pct": 2.824,
+      "extra": 411.81,
+      "counterfactual": 14584.82,
+      "dist_venue_m": 1437.4
+    },
+    {
+      "id": "c16795_-43099",
+      "lift_pct": 2.395,
+      "extra": 130.99,
+      "counterfactual": 5470.08,
+      "dist_venue_m": 1560.9
+    },
+    {
+      "id": "c16795_-43100",
+      "lift_pct": 1.992,
+      "extra": 905.71,
+      "counterfactual": 45457.64,
+      "dist_venue_m": 1726.3
+    },
+    {
+      "id": "c16795_-43101",
+      "lift_pct": 1.753,
+      "extra": 427.39,
+      "counterfactual": 24375.05,
+      "dist_venue_m": 1871.0
+    },
+    {
+      "id": "c16795_-43102",
+      "lift_pct": 1.536,
+      "extra": 413.27,
+      "counterfactual": 26908.36,
+      "dist_venue_m": 2071.9
+    },
+    {
+      "id": "c16795_-43103",
+      "lift_pct": 1.401,
+      "extra": 123.85,
+      "counterfactual": 8838.55,
+      "dist_venue_m": 2277.1
+    },
+    {
+      "id": "c16795_-43104",
+      "lift_pct": 1.325,
+      "extra": 187.79,
+      "counterfactual": 14174.53,
+      "dist_venue_m": 2466.8
+    },
+    {
+      "id": "c16795_-43105",
+      "lift_pct": 2.05,
+      "extra": 13.42,
+      "counterfactual": 654.44,
+      "dist_venue_m": 2770.3
+    },
+    {
+      "id": "c16795_-43106",
+      "lift_pct": 2.024,
+      "extra": 109.23,
+      "counterfactual": 5398.16,
+      "dist_venue_m": 3000.7
+    },
+    {
+      "id": "c16795_-43107",
+      "lift_pct": 2.012,
+      "extra": 104.39,
+      "counterfactual": 5187.04,
+      "dist_venue_m": 3156.6
+    },
+    {
+      "id": "c16795_-43110",
+      "lift_pct": 1.992,
+      "extra": 2.11,
+      "counterfactual": 105.76,
+      "dist_venue_m": 3969.5
+    },
+    {
+      "id": "c16795_-43111",
+      "lift_pct": 1.991,
+      "extra": 10.17,
+      "counterfactual": 510.86,
+      "dist_venue_m": 4129.6
+    },
+    {
+      "id": "c16795_-43112",
+      "lift_pct": 1.99,
+      "extra": 0.04,
+      "counterfactual": 1.77,
+      "dist_venue_m": 4294.5
+    },
+    {
+      "id": "c16796_-43096",
+      "lift_pct": 2.549,
+      "extra": 48.02,
+      "counterfactual": 1883.67,
+      "dist_venue_m": 1511.8
+    },
+    {
+      "id": "c16796_-43097",
+      "lift_pct": 2.489,
+      "extra": 90.28,
+      "counterfactual": 3627.25,
+      "dist_venue_m": 1530.3
+    },
+    {
+      "id": "c16796_-43098",
+      "lift_pct": 2.166,
+      "extra": 325.94,
+      "counterfactual": 15047.61,
+      "dist_venue_m": 1646.4
+    },
+    {
+      "id": "c16796_-43099",
+      "lift_pct": 1.921,
+      "extra": 261.58,
+      "counterfactual": 13618.1,
+      "dist_venue_m": 1764.4
+    },
+    {
+      "id": "c16796_-43100",
+      "lift_pct": 1.73,
+      "extra": 457.14,
+      "counterfactual": 26428.1,
+      "dist_venue_m": 1888.5
+    },
+    {
+      "id": "c16796_-43101",
+      "lift_pct": 1.534,
+      "extra": 283.87,
+      "counterfactual": 18499.22,
+      "dist_venue_m": 2073.5
+    },
+    {
+      "id": "c16796_-43102",
+      "lift_pct": 1.413,
+      "extra": 47.48,
+      "counterfactual": 3358.99,
+      "dist_venue_m": 2253.6
+    },
+    {
+      "id": "c16796_-43103",
+      "lift_pct": 1.346,
+      "extra": 65.14,
+      "counterfactual": 4841.2,
+      "dist_venue_m": 2405.8
+    },
+    {
+      "id": "c16796_-43104",
+      "lift_pct": 2.084,
+      "extra": 18.92,
+      "counterfactual": 907.7,
+      "dist_venue_m": 2591.7
+    },
+    {
+      "id": "c16796_-43105",
+      "lift_pct": 2.041,
+      "extra": 2.31,
+      "counterfactual": 113.03,
+      "dist_venue_m": 2831.7
+    },
+    {
+      "id": "c16796_-43106",
+      "lift_pct": 2.016,
+      "extra": 32.05,
+      "counterfactual": 1589.85,
+      "dist_venue_m": 3105.9
+    },
+    {
+      "id": "c16796_-43107",
+      "lift_pct": 2.009,
+      "extra": 39.02,
+      "counterfactual": 1942.89,
+      "dist_venue_m": 3229.5
+    },
+    {
+      "id": "c16796_-43108",
+      "lift_pct": 1.999,
+      "extra": 0.03,
+      "counterfactual": 1.28,
+      "dist_venue_m": 3485.6
+    },
+    {
+      "id": "c16796_-43111",
+      "lift_pct": 1.991,
+      "extra": 10.12,
+      "counterfactual": 508.64,
+      "dist_venue_m": 4232.1
+    },
+    {
+      "id": "c16797_-43097",
+      "lift_pct": 1.867,
+      "extra": 579.73,
+      "counterfactual": 31043.72,
+      "dist_venue_m": 1795.5
+    },
+    {
+      "id": "c16797_-43098",
+      "lift_pct": 1.747,
+      "extra": 229.18,
+      "counterfactual": 13115.04,
+      "dist_venue_m": 1875.3
+    },
+    {
+      "id": "c16797_-43099",
+      "lift_pct": 1.638,
+      "extra": 155.72,
+      "counterfactual": 9508.63,
+      "dist_venue_m": 1965.4
+    },
+    {
+      "id": "c16797_-43100",
+      "lift_pct": 1.507,
+      "extra": 109.33,
+      "counterfactual": 7255.13,
+      "dist_venue_m": 2108.0
+    },
+    {
+      "id": "c16797_-43101",
+      "lift_pct": 1.41,
+      "extra": 190.87,
+      "counterfactual": 13532.97,
+      "dist_venue_m": 2259.3
+    },
+    {
+      "id": "c16797_-43102",
+      "lift_pct": 1.349,
+      "extra": 86.28,
+      "counterfactual": 6394.08,
+      "dist_venue_m": 2395.8
+    },
+    {
+      "id": "c16797_-43103",
+      "lift_pct": 2.084,
+      "extra": 5.32,
+      "counterfactual": 255.1,
+      "dist_venue_m": 2589.0
+    },
+    {
+      "id": "c16797_-43104",
+      "lift_pct": 2.049,
+      "extra": 0.04,
+      "counterfactual": 1.82,
+      "dist_venue_m": 2776.8
+    },
+    {
+      "id": "c16797_-43105",
+      "lift_pct": 2.021,
+      "extra": 0.45,
+      "counterfactual": 22.34,
+      "dist_venue_m": 3029.7
+    },
+    {
+      "id": "c16797_-43106",
+      "lift_pct": 2.012,
+      "extra": 1.45,
+      "counterfactual": 72.01,
+      "dist_venue_m": 3163.4
+    },
+    {
+      "id": "c16797_-43107",
+      "lift_pct": 2.002,
+      "extra": 33.27,
+      "counterfactual": 1662.37,
+      "dist_venue_m": 3409.2
+    },
+    {
+      "id": "c16797_-43108",
+      "lift_pct": 1.997,
+      "extra": 0.01,
+      "counterfactual": 0.73,
+      "dist_venue_m": 3582.5
+    },
+    {
+      "id": "c16798_-43097",
+      "lift_pct": 1.642,
+      "extra": 3.7,
+      "counterfactual": 225.54,
+      "dist_venue_m": 1961.8
+    },
+    {
+      "id": "c16798_-43098",
+      "lift_pct": 1.468,
+      "extra": 1.04,
+      "counterfactual": 71.01,
+      "dist_venue_m": 2162.7
+    },
+    {
+      "id": "c16798_-43099",
+      "lift_pct": 1.436,
+      "extra": 160.96,
+      "counterfactual": 11205.96,
+      "dist_venue_m": 2212.6
+    },
+    {
+      "id": "c16798_-43100",
+      "lift_pct": 1.38,
+      "extra": 86.64,
+      "counterfactual": 6277.92,
+      "dist_venue_m": 2321.3
+    },
+    {
+      "id": "c16798_-43101",
+      "lift_pct": 1.327,
+      "extra": 251.0,
+      "counterfactual": 18921.2,
+      "dist_venue_m": 2461.3
+    },
+    {
+      "id": "c16798_-43102",
+      "lift_pct": 2.08,
+      "extra": 295.0,
+      "counterfactual": 14182.87,
+      "dist_venue_m": 2608.6
+    },
+    {
+      "id": "c16798_-43103",
+      "lift_pct": 2.054,
+      "extra": 0.94,
+      "counterfactual": 45.7,
+      "dist_venue_m": 2746.9
+    },
+    {
+      "id": "c16798_-43105",
+      "lift_pct": 2.017,
+      "extra": 11.21,
+      "counterfactual": 555.53,
+      "dist_venue_m": 3083.4
+    },
+    {
+      "id": "c16798_-43107",
+      "lift_pct": 1.999,
+      "extra": 87.85,
+      "counterfactual": 4395.36,
+      "dist_venue_m": 3515.4
+    },
+    {
+      "id": "c16798_-43109",
+      "lift_pct": 1.992,
+      "extra": 0.13,
+      "counterfactual": 6.66,
+      "dist_venue_m": 4018.5
+    },
+    {
+      "id": "c16798_-43110",
+      "lift_pct": 1.99,
+      "extra": 5.92,
+      "counterfactual": 297.28,
+      "dist_venue_m": 4234.3
+    },
+    {
+      "id": "c16798_-43111",
+      "lift_pct": 1.99,
+      "extra": 1.4,
+      "counterfactual": 70.22,
+      "dist_venue_m": 4434.8
+    },
+    {
+      "id": "c16798_-43112",
+      "lift_pct": 1.99,
+      "extra": 26.57,
+      "counterfactual": 1335.55,
+      "dist_venue_m": 4598.3
+    },
+    {
+      "id": "c16799_-43098",
+      "lift_pct": 1.345,
+      "extra": 36.02,
+      "counterfactual": 2677.34,
+      "dist_venue_m": 2406.6
+    },
+    {
+      "id": "c16799_-43099",
+      "lift_pct": 1.346,
+      "extra": 33.33,
+      "counterfactual": 2475.87,
+      "dist_venue_m": 2404.2
+    },
+    {
+      "id": "c16799_-43100",
+      "lift_pct": 2.106,
+      "extra": 5.09,
+      "counterfactual": 241.81,
+      "dist_venue_m": 2506.6
+    },
+    {
+      "id": "c16799_-43101",
+      "lift_pct": 2.077,
+      "extra": 79.73,
+      "counterfactual": 3839.37,
+      "dist_venue_m": 2623.9
+    },
+    {
+      "id": "c16799_-43102",
+      "lift_pct": 2.045,
+      "extra": 225.26,
+      "counterfactual": 11013.48,
+      "dist_venue_m": 2803.2
+    },
+    {
+      "id": "c16799_-43103",
+      "lift_pct": 2.03,
+      "extra": 3.56,
+      "counterfactual": 175.57,
+      "dist_venue_m": 2927.8
+    },
+    {
+      "id": "c16799_-43106",
+      "lift_pct": 2.0,
+      "extra": 8.92,
+      "counterfactual": 445.72,
+      "dist_venue_m": 3448.7
+    },
+    {
+      "id": "c16799_-43107",
+      "lift_pct": 1.995,
+      "extra": 25.21,
+      "counterfactual": 1263.42,
+      "dist_venue_m": 3671.4
+    },
+    {
+      "id": "c16799_-43108",
+      "lift_pct": 1.993,
+      "extra": 23.61,
+      "counterfactual": 1184.9,
+      "dist_venue_m": 3865.2
+    },
+    {
+      "id": "c16799_-43109",
+      "lift_pct": 1.991,
+      "extra": 33.99,
+      "counterfactual": 1706.97,
+      "dist_venue_m": 4060.0
+    },
+    {
+      "id": "c16799_-43110",
+      "lift_pct": 1.99,
+      "extra": 0.6,
+      "counterfactual": 30.0,
+      "dist_venue_m": 4244.6
+    },
+    {
+      "id": "c16799_-43111",
+      "lift_pct": 1.99,
+      "extra": 1.74,
+      "counterfactual": 87.6,
+      "dist_venue_m": 4532.4
+    },
+    {
+      "id": "c16799_-43112",
+      "lift_pct": 1.989,
+      "extra": 76.15,
+      "counterfactual": 3828.01,
+      "dist_venue_m": 4722.0
+    },
+    {
+      "id": "c16799_-43113",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 4143.82,
+      "dist_venue_m": 5015.9
+    },
+    {
+      "id": "c16799_-43114",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 3633.62,
+      "dist_venue_m": 5189.2
+    },
+    {
+      "id": "c16799_-43115",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 8.18,
+      "dist_venue_m": 5385.1
+    },
+    {
+      "id": "c16799_-43116",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 2.13,
+      "dist_venue_m": 5591.4
+    },
+    {
+      "id": "c16800_-43100",
+      "lift_pct": 2.052,
+      "extra": 0.13,
+      "counterfactual": 6.19,
+      "dist_venue_m": 2760.2
+    },
+    {
+      "id": "c16800_-43102",
+      "lift_pct": 2.025,
+      "extra": 103.19,
+      "counterfactual": 5095.51,
+      "dist_venue_m": 2982.6
+    },
+    {
+      "id": "c16800_-43103",
+      "lift_pct": 2.014,
+      "extra": 51.27,
+      "counterfactual": 2545.67,
+      "dist_venue_m": 3130.8
+    },
+    {
+      "id": "c16800_-43108",
+      "lift_pct": 1.992,
+      "extra": 30.8,
+      "counterfactual": 1546.75,
+      "dist_venue_m": 4041.0
+    },
+    {
+      "id": "c16800_-43109",
+      "lift_pct": 1.99,
+      "extra": 0.98,
+      "counterfactual": 49.06,
+      "dist_venue_m": 4239.5
+    },
+    {
+      "id": "c16800_-43110",
+      "lift_pct": 1.99,
+      "extra": 0.39,
+      "counterfactual": 19.82,
+      "dist_venue_m": 4392.5
+    },
+    {
+      "id": "c16800_-43111",
+      "lift_pct": 1.989,
+      "extra": 19.39,
+      "counterfactual": 974.84,
+      "dist_venue_m": 4622.8
+    },
+    {
+      "id": "c16800_-43112",
+      "lift_pct": 1.989,
+      "extra": 7.39,
+      "counterfactual": 371.3,
+      "dist_venue_m": 4874.9
+    },
+    {
+      "id": "c16800_-43113",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 206.9,
+      "dist_venue_m": 5024.6
+    },
+    {
+      "id": "c16800_-43114",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 685.42,
+      "dist_venue_m": 5195.3
+    },
+    {
+      "id": "c16801_-43100",
+      "lift_pct": 2.024,
+      "extra": 80.71,
+      "counterfactual": 3986.71,
+      "dist_venue_m": 2990.1
+    },
+    {
+      "id": "c16801_-43104",
+      "lift_pct": 1.999,
+      "extra": 54.5,
+      "counterfactual": 2726.37,
+      "dist_venue_m": 3492.5
+    },
+    {
+      "id": "c16801_-43110",
+      "lift_pct": 1.989,
+      "extra": 7.31,
+      "counterfactual": 367.23,
+      "dist_venue_m": 4669.7
+    },
+    {
+      "id": "c16801_-43111",
+      "lift_pct": 1.989,
+      "extra": 38.2,
+      "counterfactual": 1920.3,
+      "dist_venue_m": 4792.1
+    },
+    {
+      "id": "c16801_-43120",
+      "lift_pct": 0.0,
+      "extra": 0.0,
+      "counterfactual": 180.86,
+      "dist_venue_m": 6722.2
+    },
+    {
+      "id": "c16802_-43101",
+      "lift_pct": 2.005,
+      "extra": 2.84,
+      "counterfactual": 141.64,
+      "dist_venue_m": 3316.6
+    },
+    {
+      "id": "c16802_-43103",
+      "lift_pct": 1.998,
+      "extra": 28.66,
+      "counterfactual": 1434.09,
+      "dist_venue_m": 3530.9
+    },
+    {
+      "id": "c16802_-43104",
+      "lift_pct": 1.995,
+      "extra": 118.79,
+      "counterfactual": 5954.31,
+      "dist_venue_m": 3698.6
+    },
+    {
+      "id": "c16802_-43105",
+      "lift_pct": 1.993,
+      "extra": 227.89,
+      "counterfactual": 11435.15,
+      "dist_venue_m": 3870.4
+    },
+    {
+      "id": "c16802_-43106",
+      "lift_pct": 1.991,
+      "extra": 100.18,
+      "counterfactual": 5030.65,
+      "dist_venue_m": 4057.2
+    },
+    {
+      "id": "c16802_-43107",
+      "lift_pct": 1.991,
+      "extra": 157.88,
+      "counterfactual": 7931.29,
+      "dist_venue_m": 4202.6
+    },
+    {
+      "id": "c16802_-43110",
+      "lift_pct": 1.989,
+      "extra": 14.8,
+      "counterfactual": 744.26,
+      "dist_venue_m": 4849.1
+    },
+    {
+      "id": "c16803_-43103",
+      "lift_pct": 1.994,
+      "extra": 128.95,
+      "counterfactual": 6467.75,
+      "dist_venue_m": 3793.2
+    },
+    {
+      "id": "c16803_-43104",
+      "lift_pct": 1.992,
+      "extra": 337.06,
+      "counterfactual": 16918.8,
+      "dist_venue_m": 3943.4
+    },
+    {
+      "id": "c16803_-43105",
+      "lift_pct": 1.992,
+      "extra": 71.86,
+      "counterfactual": 3608.13,
+      "dist_venue_m": 4037.1
+    },
+    {
+      "id": "c16803_-43106",
+      "lift_pct": 1.991,
+      "extra": 157.32,
+      "counterfactual": 7901.85,
+      "dist_venue_m": 4140.9
+    },
+    {
+      "id": "c16804_-43103",
+      "lift_pct": 1.992,
+      "extra": 13.55,
+      "counterfactual": 680.37,
+      "dist_venue_m": 3937.9
+    }
+  ],
+  "focus": {
+    "cell_id": "c16791_-43096",
+    "dist_venue_m": 288.4,
+    "band_label": "250-500m",
+    "lift_pct": 45.08,
+    "extra": 817.36,
+    "counterfactual": 1813.15,
+    "outside": false,
+    "snapped": true
+  },
+  "headline": {
+    "extra_within_2p5km": 22162.38,
+    "hero_band_lift_pct": 44.96,
+    "hero_band_label": "0-250m + 250-500m",
+    "window_label": "game evening vs a matched non-game evening"
+  },
+  "diagnostics": {
+    "n_rows_scored": 3616,
+    "total_ms": 56
+  }
+}

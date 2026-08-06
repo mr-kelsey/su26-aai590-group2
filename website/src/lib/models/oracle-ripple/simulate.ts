@@ -1,8 +1,5 @@
-import cellsJson from '../../../data/cells.json';
-import scheduleJson from '../../../data/giants-schedule.json';
 import type {
   FocusResult,
-  GameInfo,
   InputValues,
   PlaceValue,
   RippleBandResult,
@@ -10,6 +7,14 @@ import type {
   RippleResult,
 } from '../types';
 import { oracleRippleConfig } from './config';
+import {
+  CELLS,
+  MEDIAN_ATT,
+  bandFor,
+  lookupGame,
+  nextGamesAfter,
+  resolveCell,
+} from './context';
 
 /* Deterministic simulated preview. Every constant below is sourced from the
    team's published gold tables (su26-aai590-Group2 pipeline/build_gold.py
@@ -54,24 +59,10 @@ const ATT_ANCHORS: ReadonlyArray<readonly [number, number]> = [
 /* Day/night: core-ring pct 460.18 (day) / 375.91 (night) vs 410.7 (all). */
 const START_MULT: Record<string, number> = { day: 1.12, night: 0.915 };
 
-/* Pins that miss every modeled cell snap to the nearest cell centroid within
-   this range; beyond it the spot is outside the modeled area. */
-const SNAP_M = 400;
-
-interface Cell {
-  id: string; gi: number; gj: number; lat: number; lon: number;
-  n_poi: number; food_share: number; dist_venue_m: number;
-}
-const CELLS: Cell[] = (cellsJson as { cells: Cell[] }).cells;
-const CELL_BY_GRID = new Map(CELLS.map((c) => [`${c.gi}_${c.gj}`, c]));
-const { dlat: DLAT, dlon: DLON } = cellsJson.meta;
-
-interface ScheduleGame {
-  d: string; dn: string; h: number; opp: string; att: number | null; gt: string;
-}
-const GAMES: ScheduleGame[] = (scheduleJson as { games: ScheduleGame[] }).games;
-const GAME_BY_DATE = new Map(GAMES.map((g) => [g.d, g]));
-const MEDIAN_ATT = scheduleJson.meta.medianAttendance as { day: number; night: number };
+/* Cell geometry, the schedule lookup and the 400m snap live in context.ts, so
+   the live adapter resolves the user's block and the day's game exactly the way
+   this does. The constants BELOW stay here on purpose: they are transcribed gold
+   numbers for the preview and the live path must never reach them. */
 
 function attMult(attendance: number): number {
   const a = ATT_ANCHORS;
@@ -86,8 +77,10 @@ function attMult(attendance: number): number {
   return 1;
 }
 
-/** Base decay curve: log-linear interpolation of lift pct over distance. */
-export function decayPct(distM: number): number {
+/* Base decay curve: log-linear interpolation of lift pct over distance.
+   NOT exported: nothing outside this module should be able to reach a simulator
+   constant, least of all the live adapter. */
+function decayPct(distM: number): number {
   const a = DECAY_ANCHORS;
   if (distM <= a[0][0]) return a[0][1];
   if (distM >= a[a.length - 1][0]) return 0;
@@ -102,46 +95,11 @@ export function decayPct(distM: number): number {
   return 0;
 }
 
-/** Equirectangular meters between two points; fine over a 10km city. */
-function distM(latA: number, lonA: number, latB: number, lonB: number): number {
-  const dy = (latA - latB) * 111320;
-  const dx = (lonA - lonB) * 111320 * Math.cos((latB * Math.PI) / 180);
-  return Math.sqrt(dx * dx + dy * dy);
-}
-
-/** The modeled cell holding the pin, or the nearest one within SNAP_M. */
-function resolveCell(place: PlaceValue): { cell: Cell | null; snapped: boolean } {
-  const gi = Math.floor(place.lat / DLAT);
-  const gj = Math.floor(place.lon / DLON);
-  const exact = CELL_BY_GRID.get(`${gi}_${gj}`);
-  if (exact) return { cell: exact, snapped: false };
-  let best: Cell | null = null;
-  let bestD = Infinity;
-  for (const c of CELLS) {
-    const d = distM(place.lat, place.lon, c.lat, c.lon);
-    if (d < bestD) {
-      bestD = d;
-      best = c;
-    }
-  }
-  return bestD <= SNAP_M ? { cell: best, snapped: true } : { cell: null, snapped: false };
-}
-
 export function simulate(values: InputValues): RippleResult {
   const place = values.business as PlaceValue;
   const date = String(values.date ?? '');
 
-  const g = GAME_BY_DATE.get(date);
-  const game: GameInfo = g
-    ? {
-        home: true,
-        opponent: g.opp,
-        start: g.dn === 'day' ? 'day' : 'night',
-        firstPitchHour: g.h,
-        attendance: g.att ?? MEDIAN_ATT[g.dn === 'day' ? 'day' : 'night'],
-        attendanceSource: g.att ? 'actual' : 'typical',
-      }
-    : { home: false };
+  const game = lookupGame(date);
 
   const scale = game.home
     ? attMult(game.attendance ?? MEDIAN_ATT.night) * (START_MULT[game.start ?? 'night'] ?? 1)
@@ -161,8 +119,6 @@ export function simulate(values: InputValues): RippleResult {
   /* Cells: each gets the smooth decay curve's pct at its distance; a band's
      absolute extra is split across its cells by POI count weighted by that
      same curve, so dense cells near the park carry more of the total. */
-  const bandFor = (d: number) =>
-    oracleRippleConfig.bands.find((b) => d >= b.innerM && d < b.outerM);
   const weights = new Map<string, number>();
   const bandWeightSum = new Map<string, number>();
   for (const c of CELLS) {
@@ -206,15 +162,7 @@ export function simulate(values: InputValues): RippleResult {
         snapped: false,
       };
 
-  const nextGames = game.home
-    ? undefined
-    : GAMES.filter((x) => x.d > date)
-        .slice(0, 3)
-        .map((x) => ({
-          date: x.d,
-          opponent: x.opp,
-          start: (x.dn === 'day' ? 'day' : 'night') as 'day' | 'night',
-        }));
+  const nextGames = game.home ? undefined : nextGamesAfter(date, 3);
 
   return {
     kind: 'ripple',

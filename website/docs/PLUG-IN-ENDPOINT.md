@@ -1,31 +1,88 @@
-# Plugging in the live capstone endpoint
+# The live capstone endpoint
 
-When the team publishes the model endpoint contract (owner: Luke), do these in
-order. Until then the site serves the simulated preview and that is fine.
+**DONE 2026-08-06.** The site calls the Tier 1 GBM behind SageMaker. This file is
+now the record of how it is wired, not a to-do list. History and rationale:
+`docs/superpowers/specs/2026-08-04-oracle-ripple-revamp-design.md`.
 
-1. **Inputs.** Paste the real user-input list into
-   `src/lib/models/oracle-ripple/config.ts` (`fields`). The form renders
-   whatever is declared; kinds available: date, number, select, toggle.
-2. **Wire format.** Implement `buildRequest()` and `parseResponse()` in
-   `src/lib/models/oracle-ripple/adapter.ts` against the real request and
-   response schema. `parseResponse` must return a `RippleResult` (see
-   `src/lib/models/types.ts`); set `measure` to what the model actually emits
-   (expected: visitor_hours).
-3. **Credentials.** Create a long-lived IAM user in the serving AWS account
-   scoped to `sagemaker:InvokeEndpoint` on the new endpoint ARN (same pattern
-   as the retired 540 setup). Set `AWS_REGION`, `AWS_ACCESS_KEY_ID`,
-   `AWS_SECRET_ACCESS_KEY`, and `SAGEMAKER_ENDPOINT_ORACLE` in the Vercel
-   project and local `.env`.
-4. **Flip.** Set `status: 'live'` in `config.ts`. Add adapter unit tests
-   beside the existing suites in `src/lib/models/__tests__/`.
-5. **Geometry true-up.** Ask Luke for `data/bronze_sf/cell_dim.parquet` and
-   diff its unit_ids against `src/data/cells.json`; regenerate with
-   `scripts/build-cells.py` if POI filters drifted. Ids are grid-derived on
-   both sides, so mismatches should be a few edge cells at most.
-6. **Simulator fate.** Keep `simulate.ts` as the badge-labeled fallback while
-   the endpoint is down (the route falls back only by config today; a runtime
-   fallback would be a deliberate change), or delete it once the team prefers
-   hard failures. Either way the UI badge keys off `meta.source`.
+## What is wired
+
+| | |
+|---|---|
+| Endpoint | `eia-nowcast-oracle-ripple-v1`, us-east-2, `ml.m5.large` |
+| Model | Tier 1 LightGBM counterfactual + canonical-ring DiD effect layer |
+| Handler | `src/eia_pipeline/serve/handler/inference.py` in the team repo |
+| Measure | **visitor-hours**, hours 16-23 only |
+| Registry | model package group `eia-nowcast-oracle-ripple`, approval-gated |
+
+The model is a COUNTERFACTUAL: it predicts what a block would look like with no
+game, and a separate measured effect is applied on top. The endpoint returns the
+composed result, so the adapter only renames and validates.
+
+## The six original steps, and how each was resolved
+
+1. **Inputs.** Unchanged: business (place) + date. Day/night and attendance are
+   not user inputs.
+2. **Wire format.** `adapter.ts` implements `buildRequest`/`parseResponse`.
+   `parseResponse(body, values)` takes the inputs too, because `focus` depends on
+   the user's pin plus the site's 400m snap policy, and `game`/`nextGames` come
+   from the bundled schedule that also drives the date field's bounds.
+3. **Credentials.** IAM user `venue-economics-invoke` carries an inline policy
+   allowing exactly `sagemaker:InvokeEndpoint` on the one endpoint ARN. Set
+   `AWS_REGION`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` and
+   `SAGEMAKER_ENDPOINT_ORACLE` in Vercel (Preview first, then Production).
+4. **Flip.** `status: 'live'` in `config.ts`. That is only ONE of two keys: the
+   route also needs `SAGEMAKER_ENDPOINT_ORACLE` set, so merging does not cut
+   over. Removing the env var is an instant rollback;
+   `ORACLE_FORCE_SIMULATED=1` is the same lever without touching the endpoint.
+5. **Geometry true-up.** DONE and now enforced in code. The model's 452 cell ids
+   match `src/data/cells.json` exactly (distances agree within 0.5m), and
+   `parseResponse` throws `EndpointContractError` on any id-set mismatch, because
+   ImpactMap defaults an unknown id to zero lift and would otherwise render a
+   flat map that looks like a no-game day.
+6. **Simulator fate.** KEPT, config-gated, no automatic runtime fallback. The
+   simulator speaks visits at a 410%-anchored core band and the live model speaks
+   visitor-hours at roughly 50%, so a silent fallback would change both the unit
+   and the magnitude under an unchanged layout. A 503 is more honest;
+   `ORACLE_FORCE_SIMULATED=1` is the deliberate manual override.
+
+## Error taxonomy
+
+| Status | Means |
+|---|---|
+| 429 | endpoint throttling |
+| 502 | `EndpointContractError`: the payload violates the agreed contract |
+| 503 | endpoint down, not InService, or not found |
+| 504 | the invoke exceeded 25s (the function ceiling is 30s) |
+| 500 | anything else |
+
+502 vs 503 matters operationally: 503 means wait, 502 means the model and the
+site disagree about the wire format and someone has to look.
+
+## Contract assertions
+
+`parseResponse` throws on: wrong `schema_version`; `bands_m` not deep-equal to the
+site's ring edges (both sets return five bands with five numbers, so a mismatch
+would silently relabel every bar); a missing band; any cell-id set mismatch; and
+the endpoint disagreeing with the bundled schedule about whether a date is a home
+game. A focus-cell echo mismatch is LOGGED, not fatal, because a pin exactly on a
+cell boundary can floor differently in Python and JavaScript and the id-set check
+already covers real drift.
+
+## Fixtures
+
+`src/lib/models/__tests__/fixtures/endpoint-*.json` are REAL responses recorded
+from the packaged handler, not hand-written. Re-record them after any change to
+the handler or the artifacts:
+
+```bash
+cd /Users/Steve3/Projects/personal/capstone/su26-aai590-group2 && uv run python -m eia_pipeline.serve.smoke
+```
+
+## Verifying without a deployed endpoint
+
+The AWS SDK honours `AWS_ENDPOINT_URL_SAGEMAKER_RUNTIME`, so the whole live path
+including the real SDK can be exercised against a local stub that serves the
+fixtures. That is how this was verified end to end before deployment.
 
 Inputs the site sends (revision 2 persona: a business owner):
 

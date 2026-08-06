@@ -85,4 +85,22 @@ describe('simulate (business + date)', () => {
   it('declares itself as visits, not visitor-hours', () => {
     expect(simulate(base).measure.id).toBe('visits');
   });
+
+  /* GOLDEN. The determinism test above compares simulate() to ITSELF, so it
+     passes no matter what the function returns and cannot catch a refactor that
+     changes the output. This pins the actual numbers. Extracting the shared
+     helpers into context.ts has to leave every one of them untouched. */
+  it('matches the pinned golden output', () => {
+    const r = simulate(base);
+    expect(r.focus.cellId).toBe('c16790_-43096');
+    expect(r.focus.liftPct).toBe(91.8);
+    expect(r.focus.extra).toBe(15178);
+    expect(r.focus.bandLabel).toBe('0-250m');
+    expect(r.bands.map((b) => b.liftPct)).toEqual([346.3, 22.5, 10.2, 2.2, 0.3]);
+    expect(r.bands.map((b) => b.extra)).toEqual([15178, 3496, 6591, 31355, 3172]);
+    expect(r.headline.extraWithin2p5km).toBe(56620);
+    // whole-surface checksum: every cell's pct and extra in one number
+    const sum = r.cells.reduce((s, c) => s + c.liftPct * 1000 + c.extra, 0);
+    expect(Math.round(sum)).toBe(691290);
+  });
 });

@@ -1,5 +1,38 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import played from './fixtures/endpoint-played-night.json';
+
+/* The SDK is mocked for the WHOLE file, so no test here can ever place a real,
+   billed AWS call even if SAGEMAKER_ENDPOINT_ORACLE leaks in from the
+   environment. vi.mock hoists above the import below, which is what makes
+   mocking a module-scope client work at all. */
+// vi.hoisted, not a plain const: vi.mock is lifted above the module body, so a
+// plain `const sendMock` is still in its temporal dead zone when the mocked
+// class is constructed at import time.
+const { sendMock } = vi.hoisted(() => ({ sendMock: vi.fn() }));
+vi.mock('@aws-sdk/client-sagemaker-runtime', () => ({
+  SageMakerRuntimeClient: class {
+    send = sendMock;
+  },
+  InvokeEndpointCommand: class {
+    constructor(public input: unknown) {}
+  },
+}));
+
 import { POST } from '../../../pages/api/predict/[model]';
+
+/* The route reads process.env per request (not import.meta.env, and not a module
+   constant), which is what makes stubbing work at all. Vitest has no config file
+   here so a local .env does NOT leak in, but an inherited
+   SAGEMAKER_ENDPOINT_ORACLE would send these unit tests down the live path and
+   place a real, billed AWS call. Pin it explicitly rather than relying on the
+   ambient environment. */
+beforeEach(() => {
+  vi.stubEnv('SAGEMAKER_ENDPOINT_ORACLE', '');
+  sendMock.mockReset();
+});
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
 
 function call(model: string, body: unknown) {
   const request = new Request(`http://local/api/predict/${model}`, {
@@ -29,7 +62,7 @@ describe('POST /api/predict/[model]', () => {
     expect(body.errors[0].key).toBe('business');
   });
 
-  it('returns a simulated envelope for valid input', async () => {
+  it('falls back to the simulator when the endpoint env var is unset', async () => {
     const res = await call('oracle-ripple', good);
     expect(res.status).toBe(200);
     const body = await res.json();
@@ -48,5 +81,69 @@ describe('POST /api/predict/[model]', () => {
     });
     const res = await POST({ params: { model: 'oracle-ripple' }, request } as never);
     expect(res.status).toBe(400);
+  });
+});
+
+describe('live path (SDK mocked)', () => {
+  const live = { business: { lat: 37.7801, lon: -122.3894 }, date: '2025-08-15' };
+
+  function goLive() {
+    vi.stubEnv('SAGEMAKER_ENDPOINT_ORACLE', 'eia-nowcast-oracle-ripple-v1');
+  }
+  const ok = () => ({ Body: new TextEncoder().encode(JSON.stringify(played)) });
+
+  it('invokes the endpoint and returns a live envelope', async () => {
+    goLive();
+    sendMock.mockResolvedValue(ok());
+    const res = await call('oracle-ripple', live);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.meta.source).toBe('live');
+    expect(body.result.measure.id).toBe('visitor_hours');
+    expect(sendMock).toHaveBeenCalledTimes(1);
+    const sent = JSON.parse(sendMock.mock.calls[0][0].input.Body);
+    expect(sent.date).toBe('2025-08-15');
+    expect(sendMock.mock.calls[0][0].input.EndpointName).toBe(
+      'eia-nowcast-oracle-ripple-v1'
+    );
+  });
+
+  it('meta.version is the model version, NOT the endpoint name', async () => {
+    goLive();
+    sendMock.mockResolvedValue(ok());
+    const body = await (await call('oracle-ripple', live)).json();
+    expect(body.meta.version).not.toBe('eia-nowcast-oracle-ripple-v1');
+    expect(body.meta.version).toMatch(/^gbm-/);
+  });
+
+  it('ORACLE_FORCE_SIMULATED=1 rolls back without a deploy', async () => {
+    goLive();
+    vi.stubEnv('ORACLE_FORCE_SIMULATED', '1');
+    const body = await (await call('oracle-ripple', live)).json();
+    expect(body.meta.source).toBe('simulated');
+    expect(sendMock).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['ThrottlingException', 'ThrottlingException', '', 429],
+    ['contract violation', 'EndpointContractError', 'cell id mismatch', 502],
+    ['abort', 'AbortError', '', 504],
+    ['not in service', 'ValidationError', 'Endpoint is not InService', 503],
+    ['anything else', 'Whatever', 'boom', 500],
+  ])('maps %s to %i', async (_n, name, message, status) => {
+    goLive();
+    sendMock.mockRejectedValue(Object.assign(new Error(message), { name }));
+    const res = await call('oracle-ripple', live);
+    expect(res.status).toBe(status);
+    // never leak internals to the client
+    expect(JSON.stringify(await res.json())).not.toContain('cell id mismatch');
+  });
+
+  it('a garbage payload becomes a 502, not a blank map', async () => {
+    goLive();
+    sendMock.mockResolvedValue({
+      Body: new TextEncoder().encode(JSON.stringify({ ...played, bands_m: [0, 1] })),
+    });
+    expect((await call('oracle-ripple', live)).status).toBe(502);
   });
 });

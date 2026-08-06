@@ -12,7 +12,12 @@ import type { ModelConfig } from '../types';
 export const oracleRippleConfig: ModelConfig = {
   id: 'oracle-ripple',
   name: 'Game-day lift at your business',
-  status: 'preview',
+  /* 'live' is only ONE of the two keys. The route also requires
+     SAGEMAKER_ENDPOINT_ORACLE to be set, so merging this does not cut over:
+     set the env var in Vercel Preview, verify a preview deploy, then add it to
+     Production. Removing it is an instant rollback with no deploy, and
+     ORACLE_FORCE_SIMULATED=1 is the same lever without touching the endpoint. */
+  status: 'live',
   endpointEnvVar: 'SAGEMAKER_ENDPOINT_ORACLE',
   fields: [
     {
@@ -35,6 +40,12 @@ export const oracleRippleConfig: ModelConfig = {
   /* The project's canonical metric rings (RING_EDGES_M in the team pipeline's
      build_silver.py, adopted 2026-07-18): 0-250m / 250-500m / 500m-1km /
      1-2.5km / 2.5-5km. The gold effect tables are native at these edges. */
+  /* Choropleth ceiling for the cell map, in lift percent. Measured off a live
+     endpoint response (scripts/smoke-endpoint.mjs): per-cell lift runs p50 2.0%,
+     p95 4.2%, max 88.2%, so 90 keeps the single hottest cell just inside the
+     ramp. FIXED rather than per-response, so two dates stay visually comparable.
+     ImpactMap warns in dev when a response exceeds it. */
+  rampMaxPct: 90,
   bands: [
     { id: 'b1', label: '0-250m', innerM: 0, outerM: 250 },
     { id: 'b2', label: '250-500m', innerM: 250, outerM: 500 },

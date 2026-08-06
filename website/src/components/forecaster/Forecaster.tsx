@@ -26,6 +26,9 @@ export default function Forecaster() {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify(values),
+        // longer than the function's own 30s ceiling, so a real server-side
+        // timeout still reaches the user as a message rather than a spinner
+        signal: AbortSignal.timeout(35_000),
       });
       const body = await res.json().catch(() => null);
       if (!res.ok) {
@@ -90,6 +93,7 @@ export default function Forecaster() {
       </div>
       <ImpactMap
         bands={oracleRippleConfig.bands}
+        rampMaxPct={oracleRippleConfig.rampMaxPct}
         result={status === 'result' ? envelope?.result ?? null : null}
         place={place}
         focusCellId={

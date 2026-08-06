@@ -71,6 +71,19 @@ It proves the ingest → land → query → residual loop before we scale to the
   - `transform/`   — residualization, joins, panel assembly
   - `calibrate/`   — velocity calibration against dollar anchors
   - `nowcast/`     — temporal disaggregation → MIDAS → DFM → state-space/BSTS
+  - `serve/`       : turns the Tier 1 GBM into something the website can call:
+    panel rebuild, 2026 covariate extension, canonical-ring effect layer,
+    `model.tar.gz`, SageMaker deploy. **It never modifies `nowcast/` or the
+    training window.** `model_hour.parquet` and `rolling_baseline.parquet` are
+    never rewritten; the serve path builds parallel `*_serve` tables and
+    `spine_2026.verify()` proves the overlap is bit-identical. Two things in here
+    are load-bearing and easy to break silently: `featurespec.py` is the ONE
+    feature-matrix builder, copied verbatim into the tarball and hash-checked at
+    container start (passing a plain numpy array instead scores every cell as its
+    lexicographic neighbour, with no exception); and the control CTE in
+    `build_rolling_baseline_serve` filters `clean_control_strict AND observed`,
+    without which every unobserved future zero flattens the baselines after it.
+    `tests/test_serve_invariants.py` pins both.
 
 ### Also in this repo (team-side, imported 2026-07-28)
 - `pipeline/`    — the team's DuckDB medallion build: `build_silver.py`

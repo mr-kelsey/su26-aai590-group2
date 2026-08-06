@@ -9,7 +9,13 @@ export interface ModelHandle {
   simulate(values: InputValues): RippleResult;
   adapter: {
     buildRequest(values: InputValues): { contentType: string; body: string };
-    parseResponse(body: string): RippleResult;
+    /* `values` is passed because the response cannot carry everything the UI
+       needs. `focus` depends on the user's pin and the site's own 400m snap
+       policy, and `game`/`nextGames` come from the bundled schedule that also
+       drives the date field's bounds. Having the endpoint own those would put
+       site UX policy in a container on a different deploy cadence, and would let
+       the form's allowed dates drift from the model's schedule. */
+    parseResponse(body: string, values: InputValues): RippleResult;
   };
 }
 
