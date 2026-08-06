@@ -347,15 +347,27 @@ def bootstrap_band_ci(dayband: pl.DataFrame, gd, cd,
 # ------------------------------------------------------------------ driver
 
 
-def estimate_all(out_path: Path | None = None, n_boot: int = N_BOOT) -> dict:
-    """Estimate the whole effect layer and write effects.json."""
-    from ..nowcast.models import tier1_gbm as t
-    from .fitmodel import load_cached
+def estimate_all(out_path: Path | None = None, n_boot: int = N_BOOT,
+                 resid_fn=None) -> dict:
+    """Estimate the whole effect layer and write effects.json.
 
-    booster, cats = load_cached()
+    The estimator is model-agnostic: everything below the residual frame
+    consumes only a `resid` column. `resid_fn(df) -> DataFrame` injects another
+    model's residuals (same columns evening_residuals returns); None keeps the
+    default GBM path byte-for-byte.
+    """
+    from ..nowcast.models import tier1_gbm as t
+
     df = t.load()
-    print("  predicting evening residuals ...", flush=True)
-    res = evening_residuals(booster, cats, df)
+    if resid_fn is None:
+        from .fitmodel import load_cached
+
+        booster, cats = load_cached()
+        print("  predicting evening residuals ...", flush=True)
+        res = evening_residuals(booster, cats, df)
+    else:
+        print("  predicting evening residuals (injected source) ...", flush=True)
+        res = resid_fn(df)
     dayband, daycell, gd, cd = day_frames(res)
     print(f"  effect window {EFFECT_WINDOW[0]}..{EFFECT_WINDOW[1]}: "
           f"{len(gd)} game days, {len(cd)} strict-control days", flush=True)
