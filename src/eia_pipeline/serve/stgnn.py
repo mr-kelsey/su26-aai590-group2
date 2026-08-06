@@ -133,14 +133,30 @@ def rebuild_model(ckpt: dict):
 
 
 def load_serve_frame() -> pl.DataFrame:
-    """The 24-hour serve panel with baselines joined; mirrors tier1_gbm.load()
-    except n_poi_live is already baked into model_hour_serve_24."""
+    """The 24-hour serve panel with baselines joined, at TRAINING semantics.
+
+    One deliberate difference from model_hour_serve's own n_poi_live: the serve
+    table holds a cell's LAST observed weekly count wherever its coverage row is
+    missing, which is the right anti-"everything went dark" policy PAST the
+    coverage horizon but silently rewrites the training window, where
+    tier1_gbm.load() filled those same rows with 0 and that is what the
+    checkpoint was fit on (0.47% of training cell-days; verify_serve_tensors
+    caught the 56,016-position mismatch). So: held rows become 0 inside the
+    span coverage data exists for, and keep the hold only beyond it.
+    """
     base = settings.data_dir / "bronze_sf"
+    cov_end = pl.read_parquet(
+        base / "cell_week_coverage.parquet")["week_start"].max()
     df = pl.read_parquet(base / "model_hour_serve_24.parquet")
     df = df.join(pl.read_parquet(base / "rolling_baseline_serve_24.parquet"),
                  on=["unit_id", "date", "hour"], how="left")
     return df.with_columns(
-        pl.col("n_poi_live").fill_null(0),
+        pl.when(pl.col("n_poi_live_held")
+                & (pl.col("date").dt.truncate("1w").cast(pl.Date) <= cov_end))
+        .then(0)
+        .otherwise(pl.col("n_poi_live"))
+        .fill_null(0)
+        .alias("n_poi_live"),
         pl.col("us_federal_holiday").cast(pl.Int8),
     )
 
