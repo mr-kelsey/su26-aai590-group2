@@ -11,6 +11,6 @@ export function buildRequest(_values: InputValues): { contentType: string; body:
   throw new Error('oracle-ripple live adapter not implemented: endpoint spec pending');
 }
 
-export function parseResponse(_body: string): RippleResult {
+export function parseResponse(_body: string, _values: InputValues): RippleResult {
   throw new Error('oracle-ripple live adapter not implemented: endpoint spec pending');
 }

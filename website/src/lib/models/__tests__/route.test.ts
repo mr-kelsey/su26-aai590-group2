@@ -1,5 +1,18 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { POST } from '../../../pages/api/predict/[model]';
+
+/* The route reads process.env per request (not import.meta.env, and not a module
+   constant), which is what makes stubbing work at all. Vitest has no config file
+   here so a local .env does NOT leak in, but an inherited
+   SAGEMAKER_ENDPOINT_ORACLE would send these unit tests down the live path and
+   place a real, billed AWS call. Pin it explicitly rather than relying on the
+   ambient environment. */
+beforeEach(() => {
+  vi.stubEnv('SAGEMAKER_ENDPOINT_ORACLE', '');
+});
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
 
 function call(model: string, body: unknown) {
   const request = new Request(`http://local/api/predict/${model}`, {
@@ -29,7 +42,7 @@ describe('POST /api/predict/[model]', () => {
     expect(body.errors[0].key).toBe('business');
   });
 
-  it('returns a simulated envelope for valid input', async () => {
+  it('falls back to the simulator when the endpoint env var is unset', async () => {
     const res = await call('oracle-ripple', good);
     expect(res.status).toBe(200);
     const body = await res.json();

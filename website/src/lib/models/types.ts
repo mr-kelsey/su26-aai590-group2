@@ -112,13 +112,34 @@ export interface RippleResult {
   /** next home dates after the chosen date, filled when game.home is false */
   nextGames?: { date: string; opponent: string; start: 'day' | 'night' }[];
   dollars?: { total: number; label: string };
+  /* Provenance the LIVE adapter fills in and the route lifts onto `meta`.
+     They ride here because parseResponse returns a RippleResult and nothing
+     else, and widening that signature to a tuple would touch every caller for
+     three optional strings. The simulator leaves all three unset. */
+
+  /** the model's own version string, so meta.version does not have to leak the
+      internal AWS endpoint name into a public response */
+  modelVersion?: string;
+  /** this date's features are projected past the observed window */
+  projected?: boolean;
+  /** last date covered by observed features, e.g. '2026-05-31' */
+  observedThrough?: string;
 }
 
 export interface PredictEnvelope {
   model: string;
   inputs: InputValues;
   result: RippleResult;
-  meta: { source: 'simulated' | 'live'; version: string };
+  meta: {
+    source: 'simulated' | 'live';
+    version: string;
+    /** live only: this date's features are projected past the observed window.
+        Distinct from game.attendanceSource === 'typical' (attendance guessed);
+        both are true for every 2026 date. */
+    projected?: boolean;
+    /** live only: last date covered by observed features, e.g. '2026-05-31' */
+    observedThrough?: string;
+  };
 }
 
 export interface FieldError {
