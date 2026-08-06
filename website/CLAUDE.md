@@ -25,7 +25,10 @@ arms share one simulator, so a simulated pair would render identical numbers und
 labels); the compare strip suppresses its delta unless both arms are live, same
 measure, game date; no MAE appears on the site (the tiers are not scored on a common
 basis, docs/PIPELINE.md); one rampMaxPct across arms; Tier 1 is always the default and
-carries the neutral `benchmark` chip.
+carries the neutral `benchmark` chip; a band the effect layer suppressed (bootstrap CI
+spans zero, wire `significant: false`) renders as "no detectable effect", never as a
+bare +0% (a bare zero inside a positive farther ring reads as a prediction bug and was
+reported as one; the STGNN arm ships exactly that shape at 1-2.5km).
 
 Going live needs TWO keys: `status: 'live'` in `config.ts` AND `SAGEMAKER_ENDPOINT_ORACLE`
 set in the environment. Vercel binds env vars at build time, so deleting the var (or
@@ -109,7 +112,10 @@ maplibre-gl-shared.mjs so a bare `?url` copy would 404 its import) and call
 - Fresh clones lack `src/data/pois.json` (not committed, see Bundled derivations): either
   copy it from a teammate or run `npm run fetch-data` with the POIS_* env vars set.
 - The simulated preview needs NO env vars locally once pois.json is on disk.
-  `.claude/launch.json` starts the dev server for browser tooling.
+  `.claude/launch.json` starts the dev server for browser tooling. The capstone-root
+  launch config (`~/Projects/personal/capstone/.claude/launch.json`) starts this same
+  dev server LIVE: it injects both SAGEMAKER_ENDPOINT_* names and AWS_REGION via `env`
+  (credentials come from the default chain in `~/.aws`).
 - Local LIVE testing: a `.env` file is inert for the predict route (`astro dev` never
   copies .env into process.env; only `astro build` does, and the route reads
   process.env). Export in the shell instead: `export AWS_REGION=us-east-2

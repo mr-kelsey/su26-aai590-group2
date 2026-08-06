@@ -71,6 +71,10 @@ export interface RippleBandResult {
   label: string;
   liftPct: number;
   extra: number;
+  /** False when the effect layer shipped this band as zero because its 95%
+      interval spans zero (a suppressed band, not a measured absence). Absent
+      means the number is a plain estimate (the simulator does not gate). */
+  significant?: boolean;
 }
 
 export interface RippleCellResult {
