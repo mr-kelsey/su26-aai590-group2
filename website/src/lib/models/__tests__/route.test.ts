@@ -111,6 +111,18 @@ describe('live path (SDK mocked)', () => {
     );
   });
 
+  it('the stgnn model id invokes the STGNN endpoint, never the GBM one', async () => {
+    // Catches the single most likely bug in config-stgnn.ts: a copy-pasted
+    // endpointEnvVar quietly serving one model's numbers under the other's id.
+    vi.stubEnv('SAGEMAKER_ENDPOINT_ORACLE_STGNN', 'eia-nowcast-oracle-ripple-stgnn-v1');
+    sendMock.mockResolvedValue(ok());
+    const res = await call('oracle-ripple-stgnn', live);
+    expect(res.status).toBe(200);
+    const ep = sendMock.mock.calls[0][0].input.EndpointName;
+    expect(ep).toBe('eia-nowcast-oracle-ripple-stgnn-v1');
+    expect(ep).not.toBe('eia-nowcast-oracle-ripple-v1');
+  });
+
   it('meta.version is the model version, NOT the endpoint name', async () => {
     goLive();
     sendMock.mockResolvedValue(ok());

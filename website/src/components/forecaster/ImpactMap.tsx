@@ -26,6 +26,8 @@ interface Props {
   place: PlaceValue | null;
   focusCellId: string | null;
   rampMaxPct: number;
+  /** which model arm painted the choropleth; null hides the tag (single-arm) */
+  armLabel?: string | null;
   onPickPlace(lat: number, lon: number): void;
 }
 
@@ -122,6 +124,7 @@ export default function ImpactMap({
   place,
   focusCellId,
   rampMaxPct,
+  armLabel,
   onPickPlace,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -232,7 +235,16 @@ export default function ImpactMap({
 
   useEffect(() => {
     const map = mapRef.current;
-    if (map && readyRef.current && result) applyResult(map, result, rampMaxPct);
+    if (!map || !readyRef.current) return;
+    if (result) applyResult(map, result, rampMaxPct);
+    else {
+      /* Clear to the zero-lift base rather than no-op. With a model toggle, a
+         null result while the previous arm's choropleth stays painted would
+         show one model's map under another model's label. */
+      (map.getSource('cells') as GeoJSONSource | undefined)?.setData(
+        cellsGeojson(new Map())
+      );
+    }
   }, [result]);
 
   useEffect(() => {
@@ -256,7 +268,11 @@ export default function ImpactMap({
           is not self-explanatory at all, so it needs one. */}
       {result ? (
         <div className="pointer-events-none absolute bottom-8 right-3 rounded-xl border border-mist bg-surface/90 px-3 py-2 backdrop-blur">
-          <p className="mb-1 text-[10px] font-medium text-faint">Lift on this date</p>
+          <p className="mb-1 text-[10px] font-medium text-faint">
+            {/* with a toggle, an unlabeled map is ambiguous about which model
+                painted it */}
+            Lift on this date{armLabel ? ` · ${armLabel}` : ''}
+          </p>
           <div className="flex items-center gap-1">
             {LEGEND_STOPS.map((f) => (
               <span key={f} className="flex flex-col items-center gap-0.5">

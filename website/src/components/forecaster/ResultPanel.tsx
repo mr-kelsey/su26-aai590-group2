@@ -131,9 +131,14 @@ export default function ResultPanel({ envelope, onJumpToDate }: Props) {
             <div className="px-6 py-4 text-center">
               <p className="text-xs font-medium text-faint">
                 {/* The 0-250m ring is a SINGLE 250m cell holding 27 businesses, so
-                    the live endpoint reports its hero over 0-500m (five cells)
-                    instead. Label whichever it actually sent. */}
-                Core ring ({meta.source === 'live' ? '0-500m' : result.bands[0]?.label})
+                    the live endpoints report their hero over 0-500m (five cells)
+                    instead. Prefer the label the endpoint actually declared
+                    (adapter maps hero_band_label onto coreBandLabel); the
+                    fallbacks keep old fixtures and the simulator rendering. */}
+                Core ring (
+                {result.headline.coreBandLabel ??
+                  (meta.source === 'live' ? '0-500m' : result.bands[0]?.label)}
+                )
               </p>
               <p className="mt-1 text-lg font-medium tabular-nums text-fg">
                 +{result.headline.coreBandLiftPct}%
