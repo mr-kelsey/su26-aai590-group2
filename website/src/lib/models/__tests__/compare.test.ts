@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import played from './fixtures/endpoint-played-night.json';
+import stgnnPlayed from './fixtures/endpoint-stgnn-played-night.json';
 
 /* Same hoisted-mock pattern as route.test.ts: the SDK is mocked for the whole
    file, so no test here can ever place a real, billed AWS call. */
@@ -20,29 +21,10 @@ import { POST } from '../../../pages/api/predict/compare';
 const GBM_EP = 'eia-nowcast-oracle-ripple-v1';
 const STGNN_EP = 'eia-nowcast-oracle-ripple-stgnn-v1';
 
-/* A synthetic second-model payload derived from the recorded GBM fixture:
-   same 452 cells, same six ring edges, same schema, DIFFERENT values and
-   version. Placeholder until the real endpoint fixture is recorded with
-   `serve.smoke --model oracle-ripple-stgnn --write-fixtures`; the derivation
-   genuinely perturbs every lift so no comparison test passes vacuously. */
-const stgnnWire = {
-  ...played,
-  model_version: 'stgnn-flow-synthetic',
-  bands: played.bands.map((b) => ({
-    ...b,
-    lift_pct: b.lift_pct * 0.8,
-    extra: b.extra * 0.9,
-  })),
-  cells: played.cells.map((c) => ({
-    ...c,
-    lift_pct: c.lift_pct * 0.8,
-    extra: c.extra * 0.9,
-  })),
-  headline: {
-    ...played.headline,
-    hero_band_lift_pct: played.headline.hero_band_lift_pct * 0.8,
-  },
-};
+/* The REAL recorded STGNN fixture (serve.smoke --model oracle-ripple-stgnn
+   --write-fixtures), same date and pin as the GBM one so the two are directly
+   diffable. */
+const stgnnWire = stgnnPlayed;
 
 beforeEach(() => {
   vi.stubEnv('SAGEMAKER_ENDPOINT_ORACLE', '');
@@ -93,6 +75,20 @@ describe('config inheritance invariants', () => {
       oracleRippleConfig.endpointEnvVar
     );
   });
+
+  it('the two recorded fixtures are genuinely different models', () => {
+    // A copied fixture with only the version swapped would make every compare
+    // test pass vacuously: the delta would be 0 and "arms differ" meaningless.
+    expect(stgnnPlayed.model_version).toMatch(/^stgnn-/);
+    expect(played.model_version).toMatch(/^gbm-/);
+    const dCore = Math.abs(stgnnPlayed.bands[0].lift_pct - played.bands[0].lift_pct);
+    expect(dCore).toBeGreaterThan(1);
+    // same wire contract though: identical cell-id set, identical ring edges
+    expect(stgnnPlayed.bands_m).toEqual(played.bands_m);
+    expect(new Set(stgnnPlayed.cells.map((c) => c.id))).toEqual(
+      new Set(played.cells.map((c) => c.id))
+    );
+  });
 });
 
 describe('POST /api/predict/compare', () => {
@@ -127,7 +123,7 @@ describe('POST /api/predict/compare', () => {
     expect(a.ok && b.ok).toBe(true);
     expect(a.meta.source).toBe('live');
     expect(b.meta.source).toBe('live');
-    expect(b.meta.version).toBe('stgnn-flow-synthetic');
+    expect(b.meta.version).toMatch(/^stgnn-/);
     // the two arms must not be the same numbers under two labels
     expect(Math.abs(a.result.focus.liftPct - b.result.focus.liftPct)).toBeGreaterThan(0.5);
     expect(sendMock).toHaveBeenCalledTimes(2);
