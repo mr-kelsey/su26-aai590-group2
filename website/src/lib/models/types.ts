@@ -56,6 +56,12 @@ export interface ModelConfig {
   bands: BandDef[];
   /** choropleth ceiling in lift percent; see the note on the value itself */
   rampMaxPct: number;
+  /** short label for the model toggle, e.g. 'Tier 1 · Gradient boosting' */
+  shortLabel?: string;
+  /** one line shown under the toggle when this arm is selected */
+  blurb?: string;
+  /** 1 | 2, used only for ordering and the neutral 'benchmark' chip */
+  tier?: 1 | 2;
 }
 
 export type InputValues = Record<string, string | number | boolean | PlaceValue | null>;
@@ -107,6 +113,9 @@ export interface RippleResult {
     /** sum of the four inner rings (0-2.5km); ring 5 is the near-zero edge */
     extraWithin2p5km: number;
     coreBandLiftPct: number;
+    /** the endpoint's own label for its hero band, e.g. '0-250m + 250-500m';
+        live only. The UI prefers it over a hardcoded '0-500m'. */
+    coreBandLabel?: string;
     windowLabel: string;
   };
   focus: FocusResult;
@@ -142,6 +151,21 @@ export interface PredictEnvelope {
     /** live only: last date covered by observed features, e.g. '2026-05-31' */
     observedThrough?: string;
   };
+}
+
+/* ---- the two-model compare route (/api/predict/compare) ---- */
+
+/** One model's outcome inside a compare response. Discriminated on `ok` so a
+    failing arm carries a status + message and can never be mistaken for data. */
+export type ArmOutcome =
+  | { ok: true; model: string; result: RippleResult; meta: PredictEnvelope['meta'] }
+  | { ok: false; model: string; status: number; error: string };
+
+export interface CompareEnvelope {
+  /** display order; order[0] is the primary and always has an entry in arms */
+  order: string[];
+  inputs: InputValues;
+  arms: Record<string, ArmOutcome>;
 }
 
 export interface FieldError {

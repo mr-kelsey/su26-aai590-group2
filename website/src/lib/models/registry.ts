@@ -1,6 +1,7 @@
 import type { InputValues, ModelConfig, RippleResult } from './types';
 import * as oracleAdapter from './oracle-ripple/adapter';
 import { oracleRippleConfig } from './oracle-ripple/config';
+import { oracleRippleStgnnConfig } from './oracle-ripple/config-stgnn';
 import { simulate as oracleSimulate, SIM_VERSION } from './oracle-ripple/simulate';
 
 export interface ModelHandle {
@@ -26,4 +27,21 @@ export const MODELS: Record<string, ModelHandle> = {
     simulate: oracleSimulate,
     adapter: oracleAdapter,
   },
+  /* The Tier 2 arm shares the adapter, simulator and context wholesale: they
+     consume only config.bands, which config-stgnn inherits by reference. The
+     shared simulator is also why the compare route never runs this arm
+     simulated (see the config's own comment). */
+  [oracleRippleStgnnConfig.id]: {
+    config: oracleRippleStgnnConfig,
+    simVersion: SIM_VERSION,
+    simulate: oracleSimulate,
+    adapter: oracleAdapter,
+  },
 };
+
+/** The benchmark arm: what /api/predict/compare always attempts, what the UI
+    selects by default, and whose status/error a total failure reports. */
+export const PRIMARY_MODEL = oracleRippleConfig.id;
+
+/** Display order for the compare route and the segmented control. */
+export const COMPARE_ARMS = [oracleRippleConfig.id, oracleRippleStgnnConfig.id];

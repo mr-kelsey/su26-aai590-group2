@@ -77,7 +77,11 @@ interface Wire {
   bands: WireBand[];
   cells: WireCell[];
   focus: { cell_id: string | null };
-  headline: { extra_within_2p5km: number; hero_band_lift_pct: number };
+  headline: {
+    extra_within_2p5km: number;
+    hero_band_lift_pct: number;
+    hero_band_label?: string;
+  };
 }
 
 export function buildRequest(values: InputValues): { contentType: string; body: string } {
@@ -249,6 +253,12 @@ export function parseResponse(body: string, values: InputValues): RippleResult {
     headline: {
       extraWithin2p5km: Math.round(p.headline.extra_within_2p5km),
       coreBandLiftPct: round1(p.headline.hero_band_lift_pct),
+      /* '0-250m + 250-500m' from the wire becomes '0-500m' for the tile; any
+         other hero composition renders as sent rather than being mislabeled */
+      coreBandLabel:
+        p.headline.hero_band_label === '0-250m + 250-500m'
+          ? '0-500m'
+          : p.headline.hero_band_label,
       windowLabel: p.game.home
         ? `evening (${p.window.label}) on a game day vs a matched non-game evening`
         : 'no Giants home game on this date',

@@ -20,6 +20,11 @@ export const oracleRippleConfig: ModelConfig = {
      immediate rollback lever is Vercel Instant Rollback. */
   status: 'live',
   endpointEnvVar: 'SAGEMAKER_ENDPOINT_ORACLE',
+  shortLabel: 'Tier 1 · Gradient boosting',
+  blurb:
+    'Scores each block on its own from calendar, weather and rolling ' +
+    'baselines. The benchmark the project reports.',
+  tier: 1,
   fields: [
     {
       key: 'business',

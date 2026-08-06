@@ -23,13 +23,16 @@ import Forecaster from '../components/forecaster/Forecaster.tsx';
     <section class="mx-auto w-full max-w-3xl px-6 pb-24 text-left">
       <h2 class="text-lg font-medium text-fg">How it works</h2>
       <p class="mt-3 text-sm leading-relaxed text-muted">
-        A counterfactual model learns what every city block looks like on a
-        normal day, trained only on hours with no event. The forecast applies
-        the measured game-day effect on top, band by band, out from the
-        ballpark. Pick your spot and a date; the schedule fills in the rest.
-        Numbers come from the live model, in visitor-hours over the 4pm to 11pm
-        window: one visitor-hour is one person present for one hour, so it is
-        not a headcount.
+        Two counterfactual models learn what every city block looks like on a
+        normal day, trained only on hours with no event: a gradient-boosted
+        benchmark that scores each block on its own, and a graph network that
+        lets related blocks inform each other. Each applies its own measured
+        game-day effect on top, band by band, out from the ballpark. Pick your
+        spot and a date; the schedule fills in the rest, and the toggle shows
+        where the two models agree and where the estimate leans on model
+        structure. Numbers come from the live models, in visitor-hours over
+        the 4pm to 11pm window: one visitor-hour is one person present for one
+        hour, so it is not a headcount.
       </p>
       <p class="mt-3 text-xs leading-relaxed text-faint">
         Built on the USD AAI-590 capstone by Stephen Farmer, Johnathan Kelsey,
