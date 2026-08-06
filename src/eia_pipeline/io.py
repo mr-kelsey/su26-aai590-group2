@@ -93,7 +93,14 @@ def duckdb_s3(con=None):
     to configure it in place; otherwise a fresh in-memory connection is returned.
 
     Reads honor AWS_REGION from the environment (settings.aws_region).
+
+    DUCKDB_MEMORY_LIMIT caps the connection. The panel build peaks on an 11.9M-row
+    window-plus-ASOF join; DuckDB handles it fine, but an explicit limit makes it
+    spill to disk under memory pressure instead of getting OOM-killed halfway
+    through a Parquet write.
     """
+    import os
+
     import duckdb
 
     con = con or duckdb.connect()
@@ -102,4 +109,7 @@ def duckdb_s3(con=None):
         "CREATE SECRET IF NOT EXISTS eia_s3 "
         f"(TYPE S3, PROVIDER CREDENTIAL_CHAIN, REGION '{settings.aws_region}');"
     )
+    limit = os.environ.get("DUCKDB_MEMORY_LIMIT")
+    if limit:
+        con.sql(f"SET memory_limit='{limit}'")
     return con
