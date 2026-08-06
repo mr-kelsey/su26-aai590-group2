@@ -184,7 +184,17 @@ export function parseResponse(body: string, values: InputValues): RippleResult {
   const byId = new Map(cells.map((c) => [c.id, c]));
   const outBands: RippleBandResult[] = oracleRippleConfig.bands.map((b) => {
     const w = wire.find((x) => x.id === b.id)!;
-    return { id: b.id, label: b.label, liftPct: round1(w.lift_pct), extra: Math.round(w.extra) };
+    return {
+      id: b.id,
+      label: b.label,
+      liftPct: round1(w.lift_pct),
+      extra: Math.round(w.extra),
+      /* The effect layer ships a band as EXACT ZERO when its bootstrap CI
+         spans zero. Passing the flag through is what lets the UI say "no
+         detectable effect" instead of a bare +0%, which reads as a broken
+         prediction (it was reported as one). */
+      significant: w.significant,
+    };
   });
   const outCells: RippleCellResult[] = cells.map((c) => ({
     id: c.id,

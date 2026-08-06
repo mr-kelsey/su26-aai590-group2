@@ -166,15 +166,30 @@ export default function ResultPanel({ envelope, onJumpToDate }: Props) {
                       }}
                     />
                   </span>
-                  <span className="tabular-nums text-fg">
-                    +{b.liftPct}% · {intFmt.format(Math.round(b.extra))}
-                  </span>
+                  {/* A suppressed band is a ring this model measured but could
+                      not tell from zero, so it ships zero. A bare "+0%" here
+                      reads as a broken prediction; say what it actually is. */}
+                  {b.significant === false ? (
+                    <span className="text-xs italic text-faint">no detectable effect</span>
+                  ) : (
+                    <span className="tabular-nums text-fg">
+                      +{b.liftPct}% · {intFmt.format(Math.round(b.extra))}
+                    </span>
+                  )}
                 </li>
               );
             })}
             <li className="text-right text-xs text-faint">
               lift and extra {copy.tileUnit} by distance from Oracle Park
             </li>
+            {result.bands.some((b) => b.significant === false) ? (
+              <li className="text-xs leading-relaxed text-faint">
+                Rings marked "no detectable effect" measured a small lift whose
+                95% interval spans zero, so this model reports zero rather than
+                a number it cannot sign. The rings around it can still show
+                lift; each ring is tested on its own.
+              </li>
+            ) : null}
           </ul>
         </>
       ) : null}

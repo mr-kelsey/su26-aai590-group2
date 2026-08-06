@@ -286,6 +286,16 @@ export default function ImpactMap({
               </span>
             ))}
           </div>
+          {/* An entire ring can sit at 0 because the effect layer ships zero
+              for a band it cannot tell from zero (CI spans zero), and a ring
+              farther out can still show lift: each ring is tested on its own.
+              Without this line a blank ring inside a shaded one reads as a
+              prediction bug (it was reported as one). */}
+          {result.game.home && result.bands.some((b) => b.significant === false) ? (
+            <p className="mt-1 max-w-[180px] text-[9px] leading-snug text-faint">
+              Unshaded rings: no effect this model can separate from zero.
+            </p>
+          ) : null}
         </div>
       ) : null}
     </div>

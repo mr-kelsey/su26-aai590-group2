@@ -7,6 +7,7 @@ import type { InputValues, PlaceValue } from '../types';
 import played from './fixtures/endpoint-played-night.json';
 import projected from './fixtures/endpoint-projected-2026.json';
 import noGame from './fixtures/endpoint-no-game.json';
+import stgnnPlayed from './fixtures/endpoint-stgnn-played-night.json';
 
 /* Fixtures are REAL responses recorded from the packaged handler
    (src/eia_pipeline/serve/handler/inference.py), not hand-written. A hand-written
@@ -98,6 +99,21 @@ describe('parseResponse', () => {
       expect(Math.abs(sum - b.extra)).toBeLessThanOrEqual(Math.max(1, 0.001 * Math.abs(b.extra)));
     }
     expect(r.headline.extraWithin2p5km).toBeGreaterThan(0);
+  });
+
+  it('carries per-band significance so a suppressed band stays legible', () => {
+    /* The effect layer ships a band as EXACT ZERO when its bootstrap CI spans
+       zero (effects_v2.py honesty rule). In the STGNN arm that fires for
+       1-2.5km while 2.5-5km stays positive, and without this flag the UI
+       renders "not distinguishable from zero" identically to "zero effect",
+       which got reported as a prediction bug. */
+    const gbm = parseResponse(body(played), vPlayed);
+    expect(gbm.bands.map((b) => b.significant)).toEqual([true, true, true, true, true]);
+
+    const stgnn = parseResponse(body(stgnnPlayed), vPlayed);
+    expect(stgnn.bands.map((b) => b.significant)).toEqual([true, true, true, false, true]);
+    const b4 = stgnn.bands.find((b) => b.id === 'b4')!;
+    expect(b4.liftPct).toBe(0);
   });
 
   it('agrees with the simulator on game and nextGames', () => {
