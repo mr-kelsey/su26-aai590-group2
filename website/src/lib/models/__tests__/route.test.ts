@@ -28,6 +28,9 @@ import { POST } from '../../../pages/api/predict/[model]';
    ambient environment. */
 beforeEach(() => {
   vi.stubEnv('SAGEMAKER_ENDPOINT_ORACLE', '');
+  // Same guard for the STGNN arm: pin it before the second endpoint even
+  // exists, so an inherited var can never send a test down a billed path.
+  vi.stubEnv('SAGEMAKER_ENDPOINT_ORACLE_STGNN', '');
   sendMock.mockReset();
 });
 afterEach(() => {
@@ -129,6 +132,10 @@ describe('live path (SDK mocked)', () => {
     ['contract violation', 'EndpointContractError', 'cell id mismatch', 502],
     ['abort', 'AbortError', '', 504],
     ['not in service', 'ValidationError', 'Endpoint is not InService', 503],
+    // misconfigured deploy creds must be diagnosable, not a bare 500
+    ['auth failure', 'AccessDeniedException', 'not authorized to invoke', 503],
+    // SageMaker 424: the container's own BadRequest (e.g. out-of-window date)
+    ['container raised', 'ModelError', 'date 2027-01-01 outside serve_window', 502],
     ['anything else', 'Whatever', 'boom', 500],
   ])('maps %s to %i', async (_n, name, message, status) => {
     goLive();
