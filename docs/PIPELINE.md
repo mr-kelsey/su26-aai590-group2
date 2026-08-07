@@ -136,8 +136,10 @@ functionally related but far apart.
 
 Both models are trained on control hours with no event features at all, and neither one is a forecaster. The model has never seen a game and cannot have partly fitted one, so its residual on a game hour is causally readable. A model given event features would already have fitted the event, and the residual we measure the effect with would partly vanish into the fit.
 
-Tier 1 is the benchmark. Test MAE 0.9180, R-squared 0.7569, beating a naive
-cell-hour-of-week baseline by 32%.
+Tier 1 is the benchmark. Test MAE 0.9372, R-squared 0.7495. The pre-2026-08-06
+figures of 0.9180 and 0.7569 were partly borrowed from the `n_poi_live` leak that
+the treatment-and-covariate fixes closed, so the small regression here is the
+honest number rather than a worse model.
 
 Tier 2 is STGCN-style rather than DCRNN. Diffusion convolution models lagged
 spatial propagation, and we measured lag-1 spatial correlation at or slightly below

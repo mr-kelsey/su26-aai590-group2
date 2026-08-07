@@ -40,6 +40,25 @@ Figures 6 and 8 carry their numbers as literals in `charts.py`, because the runs
 produced them are not re-runnable from local files. They match the ablation and dollars
 numbers recorded in `docs/PIPELINE.md`. If those are re-run, update the literals with them.
 
+## Freshness, as of 2026-08-07
+
+Figures 1 to 6 and 10 to 12 are current against the post-fix panel. Two are not, and both
+say so in `presentation-visuals/CAPTIONS.md` as well:
+
+- **Figure 7 is stale.** It needs `data/bronze_sf/tier2_ablation_seeds.json`, which is not
+  in the repo (`data/` is gitignored) and is not in the bucket. Regenerating it is 4 arms
+  x 3 seeds of Tier 2 training via `scripts/run_ablation_seeds.py`. Its qualitative claim,
+  that seed spread is wider than the gap between edge arms, is unaffected; its plotted
+  values all predate the Tier 2 retrain to test MAE 1.0548.
+- **Figure 8 is stale.** `BAND_EFFECTS` in `nowcast/game_dollars.py` is hardcoded from the
+  pre-fix effect layer, and `data/bronze_sf/sf_food_daily_dollars.parquet` is absent. The
+  0-500m band it was computed on has since moved from +37.3% to +57.5% and 2-4km became
+  significant, so the $85.5k per-game total is a floor that is now too low.
+
+Figure 5's input, `data/bronze_sf/tier3_crossover.json`, has no generator script in the
+repo. It is rebuilt by fitting Tier 1 and calling `nowcast.tier3_venue.crossover(model, df,
+n_boot=1500)`, which takes about five minutes end to end.
+
 ## Suggested order for a talk
 
 9, 10, 1, 12 are the data section — what the target looks like, what is missing, how the

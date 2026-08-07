@@ -479,10 +479,14 @@ def feature_ablation() -> Path:
     baseline has the smallest of it, but the multi-depth model is better on every other
     axis and bias is within noise at this scale.
     """
+    # Re-run 2026-08-07 on the post-PR-#23 panel, all three arms in one experiment:
+    # same load(), same lgb_params(600, seed=0), same splits, only the feature list
+    # differs. The k=8 column is not in rolling_baseline.parquet, so that arm rebuilds
+    # it with the same window logic (ROWS BETWEEN 7 PRECEDING) before fitting.
     rows = [
-        ("Calendar + weather only", 1.1122, 1.2282, 0.627),
-        ("+ single k=8 baseline", 0.9658, 1.0307, 0.7222),
-        ("+ multi-depth baseline", 0.8655, 0.9180, 0.7569),
+        ("Calendar + weather only", 1.1177, 1.2369, 0.6210),
+        ("+ single k=8 baseline", 0.9761, 1.0530, 0.7156),
+        ("+ multi-depth baseline", 0.8722, 0.9372, 0.7495),
     ]
     labels = [r[0] for r in rows]
     val = np.array([r[1] for r in rows])
