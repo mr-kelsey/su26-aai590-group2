@@ -26,16 +26,29 @@ touching it:
      identical lift. This is the piece that makes the "generalizable impact
      function" claim real rather than aspirational.
 
-The band DiD is still computed by `effects._did`, the same estimator that produced
-the published numbers, differing only in where the bands are cut. The smooth decay
-is then CALIBRATED so its activity-weighted aggregate reproduces that DiD exactly
-(see band_shifts). So the smooth curve is a within-band interpolation of the
-published result rather than a competing estimate of it.
+The band DiD keeps `effects._did`'s residual-difference form but compares game
+days to control days WITHIN (month x weekend) strata, weighted by where the game
+days sit (see did_by). This is a deliberate divergence from nowcast/effects.py,
+which pools all strict-control days: game days are almost all Apr-Sep and
+weekend-heavy, and whatever calendar structure the counterfactual fails to
+absorb walks straight into an unmatched difference. Measured on control days
+alone (a placebo, no game day involved), reweighting the pool to the game
+calendar moved the STGNN's 1-2.5km band by -1.4 log points and its 2.5-5km band
+by +2.7, which is what rendered the demo map's hollow ring: an inner band
+suppressed to zero inside a positive outer one (PR #20 discussion,
+2026-08-06). Under the matched comparison both arms agree band for band and
+decay monotonically. Matching also makes the handler's long-standing label
+"vs a matched non-game evening" true. The smooth decay is then CALIBRATED so
+its activity-weighted aggregate reproduces that DiD exactly (see band_shifts).
+So the smooth curve is a within-band interpolation of the measured result
+rather than a competing estimate of it.
 
-THREE HONESTY RULES, all inherited from how this project already works:
+FOUR HONESTY RULES:
 
   - Estimate on 2023-2024 only. 2025 reads far hotter near the ballpark because
     the device panel thins, not because the economy changed.
+  - Compare within calendar strata (month x weekend), never against the pooled
+    year: the pooled version manufactures effects out of seasonal misfit.
   - If a coefficient's bootstrap CI spans zero, SHIP ZERO. `game_dollars.py`
     already does this beyond 4km and the discipline should not be selective.
   - The 0-250m ring contains exactly ONE cell (214m, 27 POIs). It is reported,
@@ -73,6 +86,12 @@ HERO_BAND = ("b1", "b2")
 
 # 2025 is excluded on purpose: see the module docstring.
 EFFECT_WINDOW = ("2023-01-01", "2024-12-31")
+
+# Matching strata for the DiD. Month x weekend is deliberately coarse: it
+# leaves a healthy control count in every game stratum, and the 2026-08-06
+# diagnostics showed finer matching (month x day-of-week) moves no band by
+# more than 0.4 log points while thinning some strata to 1-2 control days.
+STRATA = ["month", "weekend"]
 
 N_BOOT = 1000
 SEED = 0
@@ -150,8 +169,18 @@ def day_frames(res: pl.DataFrame) -> tuple[pl.DataFrame, pl.DataFrame, list, lis
     return dayband, daycell, gd, cd
 
 
+def _with_strata(frame: pl.DataFrame) -> pl.DataFrame:
+    """Matching strata derived from `date` alone (polars weekday: 1=Mon..7=Sun),
+    so residual frames need not carry calendar columns."""
+    return frame.with_columns(
+        pl.col("date").dt.month().alias("month"),
+        (pl.col("date").dt.weekday() >= 6).alias("weekend"),
+    )
+
+
 def _mean_by(frame: pl.DataFrame, key: str, days, name: str) -> pl.DataFrame:
-    """Mean residual per key over `days`, counting a day once per appearance.
+    """Mean residual per (stratum, key) over `days`, counting a day once per
+    appearance.
 
     Joins rather than filters. A bootstrap draw contains duplicates and `is_in`
     would collapse them, turning every replicate into a ~63% subsample whose
@@ -159,15 +188,32 @@ def _mean_by(frame: pl.DataFrame, key: str, days, name: str) -> pl.DataFrame:
     `_day_mean` carries; the reasoning is written out there.
     """
     sel = pl.DataFrame({"date": list(days)}, schema={"date": frame.schema["date"]})
-    return sel.join(frame, on="date", how="inner").group_by(key).agg(
-        pl.col("resid").mean().alias(name))
+    return _with_strata(sel.join(frame, on="date", how="inner")).group_by(
+        [*STRATA, key]).agg(pl.col("resid").mean().alias(name))
 
 
 def did_by(frame: pl.DataFrame, key: str, gd, cd) -> dict:
+    """Calendar-matched DiD: game minus control WITHIN each (month, weekend)
+    stratum, combined with weights proportional to the game days in the list
+    passed, so bootstrap draws reweight by exactly what they drew.
+
+    An unmatched difference is unbiased only if the counterfactual absorbs all
+    calendar structure; measured placebo bias on control days alone reached
+    +15 log points at the core (module docstring). A stratum missing from one
+    side contributes nothing: for the real frames every stratum with a game
+    day has control days (estimate_all prints the coverage), and a synthetic
+    frame without them simply narrows the estimate to the covered strata.
+    """
     g = _mean_by(frame, key, gd, "g")
     c = _mean_by(frame, key, cd, "c")
-    j = g.join(c, on=key)
-    return {r[key]: r["g"] - r["c"] for r in j.iter_rows(named=True)}
+    sel = pl.DataFrame({"date": list(gd)}, schema={"date": frame.schema["date"]})
+    w = _with_strata(sel).group_by(STRATA).agg(pl.len().alias("n_g"))
+    j = g.join(c, on=[*STRATA, key], how="inner").join(w, on=STRATA, how="inner")
+    agg = j.group_by(key).agg(
+        ((pl.col("g") - pl.col("c")) * pl.col("n_g")).sum().alias("num"),
+        pl.col("n_g").sum().alias("den"),
+    )
+    return {r[key]: r["num"] / r["den"] for r in agg.iter_rows(named=True)}
 
 
 # ------------------------------------------------------------------ decay
@@ -249,8 +295,12 @@ def attendance_response(dayband: pl.DataFrame, gd, cd, games: pl.DataFrame,
                         n_boot: int = N_BOOT, seed: int = SEED) -> dict:
     """Per-band response of the game-day effect to attendance and day/night.
 
-    Per-game effect is that game's day x band residual minus the control mean for
-    the same band, which is exactly how `_did` decomposes. Regressed on standardized
+    Per-game effect is that game's day x band residual minus the control mean
+    for the same band IN THE GAME'S OWN (month, weekend) STRATUM, which is
+    exactly how the matched did_by decomposes. Without the stratum subtraction
+    the per-game effects re-absorb the calendar composition the matched DiD
+    removes, and the attendance slope picks up "summer weekends are busy"
+    instead of "big crowds ripple further". Regressed on standardized
     attendance and a night indicator, bootstrapped over games.
 
     TWO GATES, both of which fired on the real data:
@@ -276,11 +326,20 @@ def attendance_response(dayband: pl.DataFrame, gd, cd, games: pl.DataFrame,
     matter less".
     """
     rng = np.random.default_rng(seed)
-    ctrl = _mean_by(dayband, "band", cd, "c")
-    cmap = dict(zip(ctrl["band"], ctrl["c"]))
+    ctrl = _mean_by(dayband, "band", cd, "c")   # per (month, weekend, band)
 
     g = dayband.filter(pl.col("giants_home")).join(games, on="date", how="inner")
     g = g.filter(pl.col("attendance").is_not_null() & (pl.col("attendance") > 0))
+    # Each game is scored against its own stratum's control mean. A game whose
+    # stratum holds no control days has no calendar peers and is dropped rather
+    # than scored against the pooled mean; zero rows drop on the real frames
+    # (every game stratum has controls, see estimate_all's coverage print).
+    g = _with_strata(g).join(ctrl, on=[*STRATA, "band"], how="left")
+    n_unmatched = g.filter(pl.col("c").is_null()).height
+    if n_unmatched:
+        print(f"  attendance response: dropped {n_unmatched} game x band rows "
+              f"with no control days in their stratum", flush=True)
+    g = g.filter(pl.col("c").is_not_null())
     att = g["attendance"].to_numpy().astype(float)
     center, scale = float(att.mean()), float(att.std() or 1.0)
 
@@ -299,10 +358,10 @@ def attendance_response(dayband: pl.DataFrame, gd, cd, games: pl.DataFrame,
         if sub.height < 30:
             out["beta"][bid] = 0.0
             out["night"][bid] = 0.0
-            out["alpha"][bid] = float(sub["resid"].mean() - cmap.get(bid, 0.0)) if sub.height else 0.0
+            out["alpha"][bid] = float((sub["resid"] - sub["c"]).mean()) if sub.height else 0.0
             out["n_games"][bid] = sub.height
             continue
-        y = sub["resid"].to_numpy() - cmap.get(bid, 0.0)
+        y = (sub["resid"] - sub["c"]).to_numpy()
         z = (sub["attendance"].to_numpy().astype(float) - center) / scale
         night = (sub["day_night"].to_numpy() == "night").astype(float)
         Xd = np.column_stack([np.ones_like(z), z, night])
@@ -330,14 +389,28 @@ def attendance_response(dayband: pl.DataFrame, gd, cd, games: pl.DataFrame,
 
 def bootstrap_band_ci(dayband: pl.DataFrame, gd, cd,
                       n_boot: int = N_BOOT, seed: int = SEED) -> dict:
-    """Day-clustered bootstrap CI on the band DiD."""
+    """Day-clustered bootstrap CI on the matched band DiD.
+
+    Days are resampled WITHIN their (month, weekend) stratum so every draw
+    keeps the game-calendar composition fixed. A pooled resample would let the
+    composition term the matching removed wander back into the interval, and
+    it would occasionally empty a stratum on one side, silently changing which
+    strata the draw covers.
+    """
     rng = np.random.default_rng(seed)
-    gd, cd = np.array(gd), np.array(cd)
+
+    def by_stratum(days) -> list[list]:
+        sel = pl.DataFrame({"date": list(days)},
+                           schema={"date": dayband.schema["date"]})
+        return [g["date"].to_list()
+                for _, g in _with_strata(sel).group_by(STRATA)]
+
+    gstr, cstr = by_stratum(gd), by_stratum(cd)
     draws = {b: [] for b in BAND_IDS}
     for _ in range(n_boot):
-        d = did_by(dayband, "band",
-                   rng.choice(gd, len(gd), replace=True).tolist(),
-                   rng.choice(cd, len(cd), replace=True).tolist())
+        gdd = [s[i] for s in gstr for i in rng.integers(0, len(s), len(s))]
+        cdd = [s[i] for s in cstr for i in rng.integers(0, len(s), len(s))]
+        d = did_by(dayband, "band", gdd, cdd)
         for b in BAND_IDS:
             draws[b].append(d.get(b, np.nan))
     return {b: [float(np.nanpercentile(v, 2.5)), float(np.nanpercentile(v, 97.5))]
@@ -372,6 +445,25 @@ def estimate_all(out_path: Path | None = None, n_boot: int = N_BOOT,
     print(f"  effect window {EFFECT_WINDOW[0]}..{EFFECT_WINDOW[1]}: "
           f"{len(gd)} game days, {len(cd)} strict-control days", flush=True)
 
+    # Matching coverage. The matched DiD silently narrows to the strata that
+    # hold control days, so an empty stratum must be loud, not invisible.
+    date_schema = {"date": dayband.schema["date"]}
+    cov = (_with_strata(pl.DataFrame({"date": gd}, schema=date_schema))
+           .group_by(STRATA).agg(pl.len().alias("n_g"))
+           .join(_with_strata(pl.DataFrame({"date": cd}, schema=date_schema))
+                 .group_by(STRATA).agg(pl.len().alias("n_c")),
+                 on=STRATA, how="left")
+           .with_columns(pl.col("n_c").fill_null(0)).sort(STRATA))
+    uncontrolled = cov.filter(pl.col("n_c") == 0)
+    n_uncontrolled_days = int(uncontrolled["n_g"].sum()) if uncontrolled.height else 0
+    print(f"  matching: {cov.height} game strata (month x weekend); control "
+          f"days per stratum min {cov['n_c'].min()}, median "
+          f"{cov['n_c'].median():.0f}"
+          + (f"; WARNING {uncontrolled.height} strata hold no controls, "
+             f"dropping {n_uncontrolled_days} game days"
+             if uncontrolled.height else ""),
+          flush=True)
+
     # cell statics and activity weights (mean evening level on control days)
     w = _window(res).filter(pl.col("is_control") & ~pl.col("giants_home"))
     act = w.group_by("unit_id").agg(
@@ -396,9 +488,9 @@ def estimate_all(out_path: Path | None = None, n_boot: int = N_BOOT,
 
     # A band whose own effect cannot be told from zero ships as zero, effect and
     # response alike. This is the discipline game_dollars.py already applies past
-    # 4km, applied consistently instead of selectively. On the measured data it
-    # fires for `beyond 5km` (+0.4%, CI -1.4 to +2.1) and, crucially, kills the
-    # spurious far-field attendance slope that band would otherwise carry.
+    # 4km, applied consistently instead of selectively. On the matched estimate
+    # it fires for `beyond 5km` in both arms and, crucially, kills the spurious
+    # far-field attendance slope that band would otherwise carry.
     significant = {b for b in BAND_IDS if b in ci and ci[b][0] * ci[b][1] > 0}
     dropped = [b for b in BAND_IDS if b not in significant]
     if dropped:
@@ -418,6 +510,13 @@ def estimate_all(out_path: Path | None = None, n_boot: int = N_BOOT,
         "evening_hours": list(EVENING),
         "n_game_days": len(gd),
         "n_control_days": len(cd),
+        # additive, for auditability; the handler reads bands/decay/response only
+        "estimator": {
+            "matching": "month x weekend strata, game-day weighted",
+            "n_game_strata": int(cov.height),
+            "min_control_days_in_game_stratum": int(cov["n_c"].min()),
+            "game_days_in_uncontrolled_strata": n_uncontrolled_days,
+        },
         "bands": [
             {"id": bid, "label": label, "inner_m": lo,
              "outer_m": None if hi == float("inf") else hi,

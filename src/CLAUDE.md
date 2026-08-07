@@ -72,8 +72,10 @@ It proves the ingest → land → query → residual loop before we scale to the
   - `calibrate/`   — velocity calibration against dollar anchors
   - `nowcast/`     — temporal disaggregation → MIDAS → DFM → state-space/BSTS
   - `serve/`       : turns the Tier 1 GBM into something the website can call:
-    panel rebuild, 2026 covariate extension, canonical-ring effect layer,
-    `model.tar.gz`, SageMaker deploy. **It never modifies `nowcast/` or the
+    panel rebuild, 2026 covariate extension, canonical-ring effect layer
+    (DiD on calendar-matched controls, month x weekend strata: the unmatched
+    pool manufactured a hollow ring on the demo map, see effects_v2's module
+    docstring and PR #20), `model.tar.gz`, SageMaker deploy. **It never modifies `nowcast/` or the
     training window.** `model_hour.parquet` and `rolling_baseline.parquet` are
     never rewritten; the serve path builds parallel `*_serve` tables and
     `spine_2026.verify()` proves the overlap is bit-identical. Two things in here

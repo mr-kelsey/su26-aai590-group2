@@ -319,6 +319,111 @@ def test_model_geometry_matches_the_website_cells():
     )
 
 
+# ------------------------------------------- the matched-control estimator
+#
+# Game days are almost all Apr-Sep and weekend-heavy while the strict-control
+# pool spans the whole year, so the DiD is only unbiased if the counterfactual
+# absorbs ALL calendar structure. Neither arm's does, and the leak is what
+# manufactured the Tier 2 map's hollow 1-2.5km ring (PR #20 discussion).
+# These tests pin the matched estimator on synthetic frames where the right
+# answer is exact, so a revert to the unmatched pool fails loudly.
+
+
+def _dayband(rows) -> pl.DataFrame:
+    return pl.DataFrame(
+        rows, orient="row",
+        schema={"date": pl.Date, "band": pl.String, "resid": pl.Float64,
+                "giants_home": pl.Boolean, "is_control": pl.Boolean})
+
+
+def _weekdays(year: int, month: int, want_weekend: bool = False):
+    import calendar
+    import datetime as dt
+
+    n = calendar.monthrange(year, month)[1]
+    return [d for d in (dt.date(year, month, i + 1) for i in range(n))
+            if (d.weekday() >= 5) == want_weekend]
+
+
+def test_did_is_immune_to_calendar_composition():
+    """Zero true effect on top of a seasonal residual level (winter -1, summer
+    +1, games all summer) must estimate exactly zero. The unmatched pool
+    reports +1.0 here: the whole bias, mistaken for signal."""
+    from eia_pipeline.serve import effects_v2 as e2
+
+    jul, jan = _weekdays(2023, 7)[:20], _weekdays(2023, 1)[:20]
+    gd = _weekdays(2023, 8)[:10]  # August weekdays, same stratum type as July? no: month differs
+    # games must share a stratum with the +1 controls: use July weekdays,
+    # disjoint dates within the month
+    gd = jul[10:20]
+    rows = [(d, "b1", 1.0, False, True) for d in jul[:10]]          # summer ctl +1
+    rows += [(d, "b1", -1.0, False, True) for d in jan[:10]]        # winter ctl -1
+    rows += [(d, "b1", 1.0, True, False) for d in gd]               # games, no effect
+    db = _dayband(rows)
+    cd = jul[:10] + jan[:10]
+    did = e2.did_by(db, "band", gd, cd)
+    assert did["b1"] == pytest.approx(0.0, abs=1e-12), (
+        "calendar composition leaked into the DiD; the unmatched pool gives +1.0")
+
+
+def test_did_weights_strata_by_game_day_counts():
+    """Two strata with different control levels and different true gaps must
+    combine within-stratum gaps weighted by GAME days: (3x1.0 + 1x3.0)/4 =
+    +1.5. The unmatched pool mixes the levels and reports +1.25 here."""
+    from eia_pipeline.serve import effects_v2 as e2
+
+    wd, we = _weekdays(2023, 7), _weekdays(2023, 7, want_weekend=True)
+    rows = [(d, "b1", 1.0, False, True) for d in wd[:2]]            # ctl A at 1.0
+    rows += [(d, "b1", 2.0, True, False) for d in wd[2:5]]          # 3 games A, gap 1.0
+    rows += [(d, "b1", 2.0, False, True) for d in we[:2]]           # ctl B at 2.0
+    rows += [(d, "b1", 5.0, True, False) for d in we[2:3]]          # 1 game B, gap 3.0
+    db = _dayband(rows)
+    did = e2.did_by(db, "band", wd[2:5] + we[2:3], wd[:2] + we[:2])
+    assert did["b1"] == pytest.approx(1.5, abs=1e-12)
+
+
+def test_bootstrap_ci_resamples_within_strata():
+    """On the composition frame every within-stratum draw is exactly zero, so
+    the CI must be [0, 0]. A global resample lets winter days wander into the
+    control draw and the interval widens off zero immediately."""
+    from eia_pipeline.serve import effects_v2 as e2
+
+    jul, jan = _weekdays(2023, 7), _weekdays(2023, 1)
+    rows = [(d, "b1", 1.0, False, True) for d in jul[:10]]
+    rows += [(d, "b1", -1.0, False, True) for d in jan[:10]]
+    rows += [(d, "b1", 1.0, True, False) for d in jul[10:20]]
+    db = _dayband(rows)
+    ci = e2.bootstrap_band_ci(db, jul[10:20], jul[:10] + jan[:10], n_boot=40)
+    assert ci["b1"][0] == pytest.approx(0.0, abs=1e-12)
+    assert ci["b1"][1] == pytest.approx(0.0, abs=1e-12)
+
+
+def test_attendance_response_uses_stratum_control_means():
+    """Per-game effects must subtract the game's OWN stratum's control mean.
+    Games sit at +0.5 over their stratum in both strata here, so alpha is 0.5;
+    subtracting a global control mean would hand back 1.35 for this mix."""
+    from eia_pipeline.serve import effects_v2 as e2
+
+    wd23, wd24 = _weekdays(2023, 7), _weekdays(2024, 7)
+    we23, we24 = _weekdays(2023, 7, True), _weekdays(2024, 7, True)
+    ctl_a, ctl_b = wd24[:4], we24[:4]
+    games_a = (wd23 + wd24[4:])[:30]
+    games_b = we23[:10]
+    rows = [(d, "b1", 1.0, False, True) for d in ctl_a]
+    rows += [(d, "b1", 3.0, False, True) for d in ctl_b]
+    rows += [(d, "b1", 1.5, True, False) for d in games_a]
+    rows += [(d, "b1", 3.5, True, False) for d in games_b]
+    db = _dayband(rows)
+    games = pl.DataFrame(
+        [(d, "day", 30000) for d in games_a + games_b], orient="row",
+        schema={"date": pl.Date, "day_night": pl.String, "attendance": pl.Int64})
+    r = e2.attendance_response(db, games_a + games_b, ctl_a + ctl_b, games,
+                               significant_bands={"b1"}, n_boot=50)
+    assert r["alpha"]["b1"] == pytest.approx(0.5, abs=1e-9)
+    assert r["beta"]["b1"] == 0.0
+    assert r["night"]["b1"] == 0.0
+
+
 # ------------------------------------------------------- the STGNN grid arm
 
 STGNN_ART = settings.data_dir / "serve_artifacts_stgnn"
