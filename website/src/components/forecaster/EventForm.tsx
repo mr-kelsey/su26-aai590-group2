@@ -208,7 +208,8 @@ function PlaceField({
             >
               {results.length === 0 ? (
                 <li className="px-4 py-3 text-sm text-faint">
-                  No matches. Try the address, or click your spot on the map.
+                  No matches. Try just the street address, like 128 King St, or click your
+                  spot on the map.
                 </li>
               ) : (
                 results.map((r, i) => (
