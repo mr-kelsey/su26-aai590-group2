@@ -179,23 +179,56 @@ def test_effect_is_not_increasing_with_distance_off_centre():
                 f"band totals increase with distance at z={z}, night={nt}: {tot}")
 
 
+def test_night_response_is_centred_on_the_schedule_night_share():
+    """`did_log` is the GAME-WEIGHTED mean over a night-heavy schedule, so a day
+    game must land below it and a night game above, and the two must average back
+    to it at the schedule's night share.
+
+    Applying the night coefficient uncentered instead puts the published number on
+    the day game and lifts every night game by the full coefficient, so the mean
+    served effect exceeds the published DiD. Measured on the shipped GBM layer
+    before this was fixed: day +43.3%, night +75.9%, game-weighted +61.9% against
+    a published +43.3%.
+    """
+    ns = 0.6
+    eff = {
+        "bands": [{"id": "b1", "did_log": 0.36, "shift": 0.0, "significant": True,
+                   "inner_m": 0.0, "outer_m": 250.0}],
+        "decay": {"A": 0.0, "L": 1.0, "c": 0.0},
+        "response": {"center": 30000.0, "scale": 5000.0, "night_share": ns,
+                     "beta": {"b1": 0.0}, "night": {"b1": 0.2}},
+    }
+    day = fs.band_totals(eff, 0.0, 0.0)["b1"]
+    night = fs.band_totals(eff, 0.0, 1.0)["b1"]
+    assert day < 0.36 < night, f"day {day} and night {night} must straddle did_log"
+    assert (1 - ns) * day + ns * night == pytest.approx(0.36, abs=1e-12)
+
+
 def test_monotone_cap_is_inactive_at_the_calibration_point():
-    """The cap must not touch the published numbers. At mean attendance and a day
-    game the totals are already ordered, so every one equals its own did_log."""
+    """The cap must not touch the published numbers. At mean attendance and the
+    schedule's own night share the totals are already ordered, so every one equals
+    its own did_log."""
     eff = _eff()
-    tot = fs.band_totals(eff, 0.0, 0.0)
+    tot = fs.band_totals(eff, 0.0, eff["response"]["night_share"])
     for b in eff["bands"]:
         if b["significant"]:
             assert tot[b["id"]] == pytest.approx(float(b["did_log"]), abs=1e-12)
 
 
-def test_calibration_reproduces_the_band_did_at_mean_attendance():
+def test_calibration_reproduces_the_band_did_at_the_average_game():
     """The smooth decay is an interpolation of the published DiD, not a competing
-    estimate of it. If this drifts, the site's bars stop matching the report."""
+    estimate of it. If this drifts, the site's bars stop matching the report.
+
+    Evaluated at the calibration point, which is mean attendance AND the
+    schedule's night share. Holding is_night at 0 evaluates a DAY game, which is
+    a real number the site can return but is not the published one: on the
+    shipped GBM layer that reads +42.5% against a published +59.4%.
+    """
     _need(ARTIFACTS / "cells.npz")
     eff = _eff()
     cells = np.load(ARTIFACTS / "cells.npz")
     dist = cells["dist_venue_m"]
+    night = eff["response"]["night_share"]
     # weight by n_poi as a stand-in for activity; the calibration identity holds
     # for any positive weighting only at the weights it was fitted with, so this
     # asserts the WEAK form: sign and rough magnitude, exactly reproduced in the
@@ -208,7 +241,7 @@ def test_calibration_reproduces_the_band_did_at_mean_attendance():
             continue
         el = fs.effect_log(dist[m], [b["id"]] * int(m.sum()),
                            np.full(int(m.sum()), eff["response"]["center"]),
-                           np.zeros(int(m.sum())), eff)
+                           np.full(int(m.sum()), night), eff)
         agg = float(np.mean(np.exp(el)) - 1) * 100
         assert np.sign(agg) == np.sign(b["lift_pct"])
         assert abs(agg - b["lift_pct"]) < max(2.0, 0.25 * abs(b["lift_pct"]))
@@ -421,6 +454,25 @@ def test_attendance_response_uses_stratum_control_means():
                                significant_bands={"b1"}, n_boot=50)
     assert r["alpha"]["b1"] == pytest.approx(0.5, abs=1e-9)
     assert r["beta"]["b1"] == 0.0
+
+
+def test_response_reports_the_night_share_it_centres_on():
+    """`featurespec._adj` centres the night indicator on this, so the fit has to
+    publish the mix it was estimated over. Without it the served night games carry
+    the whole coefficient on top of a mean that already contains it."""
+    from eia_pipeline.serve import effects_v2 as e2
+
+    wd = _weekdays(2024, 7)
+    ctl, gm = wd[:6], wd[6:16]
+    rows = [(d, "b1", 1.0, False, True) for d in ctl]
+    rows += [(d, "b1", 2.0, True, False) for d in gm]
+    games = pl.DataFrame(
+        [(d, "night" if i < 6 else "day", 30000) for i, d in enumerate(gm)],
+        orient="row",
+        schema={"date": pl.Date, "day_night": pl.String, "attendance": pl.Int64})
+    r = e2.attendance_response(_dayband(rows), gm, ctl, games,
+                               significant_bands={"b1"}, n_boot=20)
+    assert r["night_share"] == pytest.approx(0.6, abs=1e-12)
     assert r["night"]["b1"] == 0.0
 
 

@@ -89,6 +89,29 @@ def log(msg):
     print(f"[build_gold] {msg}", flush=True)
 
 
+def count_split_boundary_leaks(con, table="gnn_time_hour"):
+    """Game hours whose split label disagrees with the split their date falls in.
+
+    This is the check the old `gnn_no_leakage` gate was supposed to be. It used to
+    read `clean_control AND giants_home`, but silver builds `giants_home` as
+    `game.date IS NOT NULL` and `clean_control` as `game.date IS NULL AND ...`, so
+    the two are mutually exclusive by construction and the count was structurally
+    always zero. It reported PASS on a condition no row could ever meet.
+
+    What can actually go wrong is a game hour landing in the wrong split, or in a
+    split whose date range does not contain it, which is what leaks a test-window
+    game into training. Rows outside every declared range count as leaks too, so
+    widening the panel without widening SPLITS fails here instead of silently.
+    """
+    cases = " ".join(
+        f"WHEN date BETWEEN DATE '{lo}' AND DATE '{hi}' THEN '{name}'"
+        for name, (lo, hi) in SPLITS.items())
+    return con.sql(f"""
+        SELECT COUNT(*) FROM {table}
+        WHERE giants_home
+          AND split IS DISTINCT FROM (CASE {cases} ELSE NULL END)""").fetchone()[0]
+
+
 # --------------------------------------------------------------- QA vocabulary
 #
 # Five kinds, because "PASS" used to stand for five different things and a
@@ -797,11 +820,9 @@ def build_gnn_tables(con, silver, bronze_advan):
         FROM gnn_time_hour""").fetchone()
     gate("gnn_splits_partition", bad_split == 0,
          f"{n_hours} spine hours, {bad_split} outside any split")
-    leak = con.sql("""
-        SELECT COUNT(*) FROM gnn_time_hour
-        WHERE clean_control AND giants_home""").fetchone()[0]
+    leak = count_split_boundary_leaks(con, "gnn_time_hour")
     gate("gnn_no_leakage", leak == 0,
-         f"{leak} hours flagged clean_control on a game day")
+         f"{leak} game hours carry a split label their date does not fall in")
     wx_cov = con.sql("""
         SELECT AVG((temp_hr IS NOT NULL)::INT) FROM gnn_time_hour
     """).fetchone()[0]

@@ -165,10 +165,18 @@ def _metadata(model: str, man: dict, eff: dict) -> dict:
         "bands not distinguishable from zero ship as zero: "
         + (",".join(suppressed) or "none"))
     if model == "oracle-ripple":
+        # Measured by tier1_gbm.fit() on the held-out test split, which is a
+        # DIFFERENT model from the one served here: the served booster is refit on
+        # every split's control hours, so it has no held-out set of its own. These
+        # are hand-carried and have to be re-measured whenever the panel changes.
+        # 2026-08-06: 0.9372 / 0.7495 on the corrected panel, up from 0.9180 /
+        # 0.7569, because n_poi_live no longer carries game-week information and
+        # the strict control pool no longer contains ballpark event days. The old
+        # figure was partly borrowed from a leak.
         common.update({
             "objective": "l2_on_log1p",
-            "held_out_test_mae": "0.9185",
-            "held_out_test_r2": "0.7568",
+            "held_out_test_mae": "0.9372",
+            "held_out_test_r2": "0.7495",
             "served_variant": "full_control_all_splits",
         })
     else:

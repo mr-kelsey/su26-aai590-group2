@@ -77,6 +77,35 @@ RING_LABELS = ["0-250m", "250-500m", "500m-1km", "1-2.5km", "2.5-5km"]
 PANEL_START = "2022-01-01"  # study window: 2022+ era (Advan starts 2020-01-06)
 PANEL_END = "2025-12-31"    # study window cutoff: full seasons 2022-2025 only
 
+# The treatment is a REAL Giants home game. game_type 'S' is spring training:
+# four Bay Bridge Series exhibitions fall inside the window (2023-03-27,
+# 2024-03-26, 2025-03-24, 2025-03-25). They draw 20-30k against a 35k regular
+# median, and being late-March they draw control sets that are 63% deep
+# offseason against 8.8% across all matched pairs, so they were the worst-matched
+# treatment days in the panel. Postseason ('D', 'L', 'W') and the 'E' exhibition
+# code against non-MLB opposition are handled explicitly: postseason stays,
+# exhibitions do not.
+EXHIBITION_GAME_TYPES = ("S", "E")
+TREATMENT_GAME_FILTER = (
+    "game_type NOT IN ("
+    + ", ".join(f"'{g}'" for g in EXHIBITION_GAME_TYPES)
+    + ")"
+)
+
+
+def window_week_filter(start: str, end: str) -> str:
+    """SQL predicate keeping Advan weeks that overlap the study window.
+
+    `visits_balanced` counts a POI as balanced when it reports in EVERY week, so
+    the week set it is measured against has to be the study window's, not the
+    whole extract's. The extract spans 2020-01-06 to 2026-05-25, which includes
+    the COVID era the project excludes by design and a 2026 tail past PANEL_END;
+    requiring presence across all of that disqualified about 2,400 POIs that are
+    in fact present in every week we actually model.
+    """
+    return (f"DATE_RANGE_START::DATE >= DATE '{start}' "
+            f"AND DATE_RANGE_START::DATE <= DATE '{end}'")
+
 # Occupancy (visitor-hours) window is NARROWER than the visits panel. Advan
 # changed how VISITS_BY_EACH_HOUR is constructed between 2022 Q4 and 2023 Q1:
 # on a fixed set of 4,284 POIs (hourly present all four years), the
@@ -288,7 +317,9 @@ def build_poi_rings(con, bronze):
                    any_value(LONGITUDE) AS lon,
                    any_value(NAICS_CODE) AS naics_code,
                    any_value(TOP_CATEGORY) AS top_category,
-                   COUNT(*) AS weeks_present,
+                   COUNT(DISTINCT DATE_RANGE_START::DATE)
+                       FILTER ({window_week_filter(PANEL_START, PANEL_END)})
+                       AS weeks_present,
                    MIN(DATE_RANGE_START::DATE) AS first_week,
                    MAX(DATE_RANGE_START::DATE) AS last_week
             FROM read_parquet('{advan}')
@@ -313,14 +344,16 @@ def build_poi_rings(con, bronze):
 
 def build_visits_ring_day(con, bronze):
     advan = bronze_path(bronze, "advan_weekly_patterns/*.parquet")
+    in_window = window_week_filter(PANEL_START, PANEL_END)
     total_weeks, bad_weeks = con.sql(f"""
         SELECT COUNT(DISTINCT DATE_RANGE_START::DATE),
                COUNT(DISTINCT DATE_RANGE_START::DATE)
                  FILTER (dayofweek(DATE_RANGE_START::DATE) != 1)
         FROM read_parquet('{advan}')
+        WHERE {in_window}
     """).fetchone()
     gate("advan_weeks_monday_aligned", bad_weeks == 0,
-         f"{total_weeks} distinct weeks, {bad_weeks} not Monday-aligned")
+         f"{total_weeks} distinct weeks in window, {bad_weeks} not Monday-aligned")
 
     con.sql(f"""
         CREATE OR REPLACE TABLE advan_daily AS
@@ -661,7 +694,8 @@ def build_calendar_day(con, bronze, panel_end):
                    {fph} AS first_pitch_hour,
                    string_agg(DISTINCT game_type, ',') AS game_types,
                    string_agg(opponent, '; ') AS opponents
-            FROM read_csv('{mlb}') GROUP BY 1),
+            FROM read_csv('{mlb}')
+            WHERE {TREATMENT_GAME_FILTER} GROUP BY 1),
         park_ev AS (
             SELECT date::DATE AS date, string_agg(name, '; ') AS ballpark_event
             FROM read_csv('{park}') GROUP BY 1),

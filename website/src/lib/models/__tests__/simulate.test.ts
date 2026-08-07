@@ -89,18 +89,24 @@ describe('simulate (business + date)', () => {
   /* GOLDEN. The determinism test above compares simulate() to ITSELF, so it
      passes no matter what the function returns and cannot catch a refactor that
      changes the output. This pins the actual numbers. Extracting the shared
-     helpers into context.ts has to leave every one of them untouched. */
+     helpers into context.ts has to leave every one of them untouched.
+
+     The date is pinned rather than taken from `base`, whose `playedNight` is
+     whichever night game sorts first in the bundled schedule. That moved when
+     spring training was excluded from the treatment set (the old first entry was
+     the 2023-03-27 Bay Bridge Series exhibition), which broke this golden for a
+     reason that had nothing to do with the simulator. */
   it('matches the pinned golden output', () => {
-    const r = simulate(base);
+    const r = simulate({ business: IN_CELL, date: '2024-05-15' });
     expect(r.focus.cellId).toBe('c16790_-43096');
-    expect(r.focus.liftPct).toBe(91.8);
-    expect(r.focus.extra).toBe(15178);
+    expect(r.focus.liftPct).toBe(107.5);
+    expect(r.focus.extra).toBe(17777);
     expect(r.focus.bandLabel).toBe('0-250m');
-    expect(r.bands.map((b) => b.liftPct)).toEqual([346.3, 22.5, 10.2, 2.2, 0.3]);
-    expect(r.bands.map((b) => b.extra)).toEqual([15178, 3496, 6591, 31355, 3172]);
-    expect(r.headline.extraWithin2p5km).toBe(56620);
+    expect(r.bands.map((b) => b.liftPct)).toEqual([405.6, 26.4, 12, 2.5, 0.4]);
+    expect(r.bands.map((b) => b.extra)).toEqual([17777, 4094, 7720, 36722, 3715]);
+    expect(r.headline.extraWithin2p5km).toBe(66313);
     // whole-surface checksum: every cell's pct and extra in one number
     const sum = r.cells.reduce((s, c) => s + c.liftPct * 1000 + c.extra, 0);
-    expect(Math.round(sum)).toBe(691290);
+    expect(Math.round(sum)).toBe(810121);
   });
 });

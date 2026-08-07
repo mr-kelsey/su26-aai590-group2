@@ -4,8 +4,10 @@ We take the covariates from gold/gnn_time_hour rather than rebuilding them out o
 
 We carry two definitions of a control day, because we wanted to measure the difference between them:
 
-  clean_control         as shipped in gold. Excludes Giants games, but not Chase, Moscone, citywide events or street fairs.
+  clean_control         as shipped in gold. Excludes Giants games and non-baseball events at the ballpark, but not Chase, Moscone, citywide events or street fairs.
   clean_control_strict  also excludes all of those.
+
+Strict is a SUBSET of shipped, and that is the invariant to preserve. It used to omit the ballpark-event exclusion that shipped already had, so the "stricter" pool quietly re-admitted concerts and Monster Jam at Oracle Park: 17 of the 581 event-free days, 10 of them inside the 2023-2024 effect window, running +123% on evening 0-500m activity. tests/test_control_definitions.py pins the subset property and pins this copy against the serving spine's, since serve/spine_2026.py builds the same predicate independently.
 
 828 days carry the shipped flag but only 581 are event-free, leaving about 247 contaminated days in the control pool. Measured at city grain, the difference between the two pools is -0.3% on test MAE. We keep both flags so the choice of pool is a measured result.
 
@@ -53,7 +55,7 @@ def build(con=None) -> Path:
                 t.tmax, t.prcp,
                 -- controls: shipped vs strict (see module docstring)
                 t.clean_control,
-                (NOT t.giants_home AND NOT t.chase_day AND NOT t.moscone_day
+                (NOT t.giants_home AND NOT t.ballpark_day AND NOT t.chase_day AND NOT t.moscone_day
                  AND NOT t.citywide_day AND NOT t.street_fair_day)
                     AS clean_control_strict,
                 t.split,
@@ -65,6 +67,7 @@ def build(con=None) -> Path:
                 SELECT date, hour, giants_home, n_games, first_pitch_hour,
                        day_night, relative_hour,
                        NULL::DOUBLE AS attendance_proxy,
+                       ballpark_day,
                        chase_day, chase_event_hour, moscone_day, citywide_day,
                        street_fair_day, us_federal_holiday, dow, month,
                        temp_hr, prcp_hr, wind_hr, tmax, prcp,

@@ -342,8 +342,14 @@ def attendance_response(dayband: pl.DataFrame, gd, cd, games: pl.DataFrame,
     g = g.filter(pl.col("c").is_not_null())
     att = g["attendance"].to_numpy().astype(float)
     center, scale = float(att.mean()), float(att.std() or 1.0)
+    # The mix the night coefficient is centred on at serve time. did_log is the
+    # game-weighted mean over these games, so a raw 0/1 night indicator would
+    # re-add a premium the mean already carries. featurespec._adj requires this.
+    gm = g.select("date", "day_night").unique("date")
+    night_share = float((gm["day_night"] == "night").mean())
 
-    out = {"center": center, "scale": scale, "beta": {}, "night": {},
+    out = {"center": center, "scale": scale, "night_share": night_share,
+           "beta": {}, "night": {},
            "alpha": {}, "n_games": {}, "beta_ci": {}, "night_ci": {}}
 
     for bid in BAND_IDS:
