@@ -176,10 +176,13 @@ def effect_log(dist_m, band_ids, attendance, is_night, eff):
     band whose own effect could not be told from zero. Suppression has to happen
     at the multiplier, not at the shift.
 
-    Calibration holds AT MEAN ATTENDANCE: band_shifts pins the activity-weighted
-    aggregate to the published DiD for a game at `response.center`. A busier or
-    quieter game is then moved off that point on purpose; that is what the
-    response is for.
+    Calibration holds AT THE AVERAGE GAME: band_shifts pins the activity-weighted
+    aggregate to the published DiD for a game at `response.center` attendance and
+    at `response.night_share`, the day/night mix the DiD was estimated over. A
+    busier, quieter, earlier or later game is then moved off that point on
+    purpose; that is what the response is for. Both regressors are centred, so
+    the published number is the mean over the schedule rather than the value for
+    one arbitrary game type. See `_adj`.
 
     MONOTONE CAP. The per-band responses are fitted independently, so nothing in
     the fit stops an outer band from overtaking an inner one once attendance moves
@@ -223,8 +226,23 @@ def effect_log(dist_m, band_ids, attendance, is_night, eff):
 
 
 def _adj(eff, bid, z, nt):
+    """Attendance and day/night offset from the calibration point.
+
+    Both regressors are CENTRED, and for the same reason: `did_log` is the
+    game-weighted mean over the games the DiD was estimated on, so the offset has
+    to be zero for the average game or the published number stops being the mean.
+    Attendance is centred by `z` upstream; night is centred here on the schedule's
+    own night share. Adding the raw 0/1 indicator instead pins the published
+    figure to a DAY game and lifts every night game by the whole coefficient.
+    """
     r = eff["response"]
-    return r["beta"].get(bid, 0.0) * z + r["night"].get(bid, 0.0) * nt
+    gam = r["night"].get(bid, 0.0)
+    if gam and "night_share" not in r:
+        raise KeyError(
+            f"response.night[{bid}] is {gam} but response.night_share is missing; "
+            "this effect layer predates the centring fix and would over-state "
+            "every night game. Rebuild it with serve.effects_v2.")
+    return r["beta"].get(bid, 0.0) * z + gam * (nt - r.get("night_share", 0.0))
 
 
 def band_totals(eff, z, nt):

@@ -73,11 +73,26 @@ HOLIDAYS_2026 = [
 ]
 
 MLB = "S3/mlb_giants_schedule/mlb_giants_home_games.csv"
+# Mirrors pipeline/build_silver.py's constant of the same name, and
+# tests/test_pipeline_sql.py pins the two together. Gold already supplies
+# giants_home for the training window, so this only governs the 2026 extension
+# and the attendance model, but both feed the public site: without it next
+# spring's Bay Bridge Series renders as a Giants home game.
+EXHIBITION_GAME_TYPES = ("S", "E")
+TREATMENT_GAME_FILTER = (
+    "game_type NOT IN ("
+    + ", ".join(f"'{g}'" for g in EXHIBITION_GAME_TYPES)
+    + ")"
+)
 NBA = "S3/competing_events/nba_warriors_schedule.csv"
 WNBA = "S3/competing_events/wnba_valkyries_schedule.csv"
 TICKETMASTER = "S3/competing_events/ticketmaster_events.csv"
 MOSCONE = "S3/competing_events/moscone_citywide_events.csv"
 STREET = "S3/competing_events/street_fairs_near_oracle.csv"
+# Non-baseball events AT the ballpark (concerts, Monster Jam, corporate hires).
+# Gold's own clean_control has always excluded these; clean_control_strict has to
+# as well, or the strict pool is not a subset of the shipped one.
+PARK = "S3/competing_events/oracle_park_events.csv"
 LCD = "S3/noaa_weather_hourly/LCD_*.csv"
 
 
@@ -223,7 +238,7 @@ def attendance_prior(con=None) -> dict:
         SELECT date::DATE AS date, day_night,
                TRY_CAST(attendance AS INTEGER) AS attendance
         FROM read_csv('{_src(MLB)}', all_varchar=true)
-        WHERE date::DATE >= DATE '2023-01-01'
+        WHERE date::DATE >= DATE '2023-01-01' AND {TREATMENT_GAME_FILTER}
         """
     ).pl()
     played = games.filter(
@@ -286,6 +301,7 @@ def build_spine_serve(con=None) -> Path:
         WITH gold AS (
             SELECT date, hour, dow, month,
                    giants_home, n_games, first_pitch_hour, day_night,
+                   ballpark_day,
                    chase_day, moscone_day, citywide_day, street_fair_day,
                    us_federal_holiday, temp_hr, prcp_hr, wind_hr, split,
                    'observed' AS weather_source
@@ -297,12 +313,17 @@ def build_spine_serve(con=None) -> Path:
                                                 INTERVAL 1 DAY))::DATE AS d)
             CROSS JOIN (SELECT unnest(generate_series(0, 23)) AS h)
         ),
+        park26 AS (
+            SELECT DISTINCT date::DATE AS date
+            FROM read_csv('{_src(PARK)}', all_varchar=true)
+            WHERE date::DATE >= DATE '2026-01-01'),
         games26 AS (
             SELECT date::DATE AS date, count(*) AS n_games,
                    max(CASE WHEN day_night = 'night' THEN 'night' ELSE 'day' END) AS day_night,
                    min(TRY_CAST(first_pitch_hour AS BIGINT)) AS first_pitch_hour
             FROM read_csv('{_src(MLB)}', all_varchar=true)
-            WHERE date::DATE >= DATE '2026-01-01' GROUP BY 1),
+            WHERE date::DATE >= DATE '2026-01-01' AND {TREATMENT_GAME_FILTER}
+            GROUP BY 1),
         chase26 AS (
             SELECT DISTINCT date FROM (
                 SELECT date::DATE AS date FROM read_csv('{_src(NBA)}', all_varchar=true)
@@ -332,6 +353,7 @@ def build_spine_serve(con=None) -> Path:
                    (gm.date IS NOT NULL) AS giants_home,
                    COALESCE(gm.n_games, 0) AS n_games,
                    gm.first_pitch_hour, gm.day_night,
+                   (pk.date IS NOT NULL) AS ballpark_day,
                    (c.date IS NOT NULL) AS chase_day,
                    (mm.date IS NOT NULL) AS moscone_day,
                    (cw.date IS NOT NULL) AS citywide_day,
@@ -342,6 +364,7 @@ def build_spine_serve(con=None) -> Path:
                    w.weather_source
             FROM grid26 g
             LEFT JOIN games26 gm USING (date)
+            LEFT JOIN park26 pk USING (date)
             LEFT JOIN chase26 c USING (date)
             LEFT JOIN (SELECT DISTINCT date FROM mos26 WHERE venue ILIKE '%moscone%') mm USING (date)
             LEFT JOIN (SELECT DISTINCT date FROM mos26 WHERE venue NOT ILIKE '%moscone%') cw USING (date)
@@ -356,7 +379,7 @@ def build_spine_serve(con=None) -> Path:
                CAST(first_pitch_hour AS BIGINT) AS first_pitch_hour, day_night,
                chase_day, moscone_day, citywide_day, street_fair_day,
                us_federal_holiday, temp_hr, prcp_hr, wind_hr, split, weather_source,
-               (NOT giants_home AND NOT chase_day AND NOT moscone_day
+               (NOT giants_home AND NOT ballpark_day AND NOT chase_day AND NOT moscone_day
                 AND NOT citywide_day AND NOT street_fair_day) AS clean_control_strict,
                date_diff('day', DATE '{T_INDEX_EPOCH}', date) AS t_index,
                (date <= DATE '{obs_end}') AS observed,

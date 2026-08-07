@@ -24,6 +24,53 @@ HOURLY = f"read_parquet('{BASE}/hourly/*.parquet')"
 DAILY = f"read_parquet('{BASE}/daily/*.parquet')"
 POI_CELL = f"read_parquet('{BASE}/poi_cell.parquet')"
 
+# Giants home dates, for excluding the treatment from covariate construction.
+# Exhibition game types are not treatment (see pipeline/build_silver.py), but
+# they are still days when the ballpark drew a crowd, so for the purpose of
+# keeping game-day activity OUT of a control covariate every scheduled date
+# counts.
+MLB_REL = "S3/mlb_giants_schedule/mlb_giants_home_games.csv"
+
+
+def game_dates() -> str:
+    """Table expression yielding one `date` column of Giants home dates."""
+    from ..ingest.advan_bronze import medallion_root
+
+    src = f"{medallion_root().rstrip('/')}/{MLB_REL}"
+    return f"(SELECT DISTINCT date::DATE AS date FROM read_csv('{src}', all_varchar=true))"
+
+
+def coverage_sql(hourly: str, poi_cell: str, games: str) -> str:
+    """unit x ISO week distinct live POIs, LAGGED one week.
+
+    Week W carries week W-1's count, so the covariate is strictly backward
+    looking and nothing inside week W, game day or not, can move it.
+
+    Counting week W itself leaked the treatment: a POI that only reports when the
+    ballpark is full made its own cell look structurally healthier, and the model
+    carried that into the counterfactual it is supposed to compare the game day
+    against. Measured on the real panel over 2023-04 to 2024-09, cells within
+    500m ran +6.1% n_poi_live on game weeks against +1.5% citywide, so 4.6 points
+    of venue-specific game-week signal sitting in a control covariate.
+
+    Excluding the week's game days instead is WORSE and was measured before being
+    rejected: -25.4% within 500m against -22.6% citywide. A distinct-count union
+    grows with the number of days it spans, and a game week has fewer control
+    days, so the denominator artifact is larger than the leak it removes. A
+    control-day daily mean sits in between (+2.9% against +5.2%). The lag has no
+    denominator artifact, every week having exactly seven days, and measures
+    -1.1% against +1.1%, which is noise. `games` is therefore unused here and
+    kept only so the signature documents what this covariate must stay free of.
+    """
+    del games  # the lag, not a filter, is what keeps the treatment out
+    return f"""
+        SELECT pc.unit_id,
+               (date_trunc('week', h.date) + INTERVAL 7 DAY)::DATE AS week_start,
+               count(DISTINCT h.footprint_id) AS n_poi_live
+        FROM {hourly} h JOIN {poi_cell} pc USING (footprint_id)
+        GROUP BY 1, 2
+    """
+
 
 def build_cell_hour(con=None, start: str = HOURLY_START, end: str = HOURLY_END) -> Path:
     """Dense unit x date x hour person-hours, plus the reporting-POI count.
@@ -70,21 +117,18 @@ def build_cell_hour(con=None, start: str = HOURLY_START, end: str = HOURLY_END) 
 
 
 def build_cell_week_coverage(con=None) -> Path:
-    """unit x ISO week: how many distinct POIs in the cell reported any hour.
+    """unit x ISO week: how many distinct POIs in the cell reported, lagged a week.
 
     We cannot use n_poi_reporting at hour grain as our drift covariate. That column counts POIs with a non-zero hour, so whenever person_hours is 0 the count is 0 as well, and the feature ends up leaking the target almost deterministically. Counting the distinct POIs that were live in a cell across a whole week gives us a real measure of panel health instead, and it still tracks the same 27% construction slide without encoding any single hour's outcome.
+
+    The count is lagged one week for the same reason we could not use the hour-grain column: read contemporaneously it let the treatment back into a covariate the counterfactual is built from. `coverage_sql` holds the measurements behind that choice, including the two alternatives that measured worse, and tests/test_panel_leakage.py pins the invariant.
     """
     con = con or duckdb_s3()
     dest = settings.data_dir / "bronze_sf" / "cell_week_coverage.parquet"
     con.execute(
         f"""
-        COPY (
-            SELECT pc.unit_id,
-                   date_trunc('week', h.date)::DATE AS week_start,
-                   count(DISTINCT h.footprint_id) AS n_poi_live
-            FROM {HOURLY} h JOIN {POI_CELL} pc USING (footprint_id)
-            GROUP BY 1, 2
-        ) TO '{dest}' (FORMAT PARQUET, COMPRESSION ZSTD)
+        COPY ({coverage_sql(HOURLY, POI_CELL, game_dates())})
+        TO '{dest}' (FORMAT PARQUET, COMPRESSION ZSTD)
         """
     )
     n = con.execute(f"SELECT count(*) FROM read_parquet('{dest}')").fetchone()[0]

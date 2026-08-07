@@ -35,6 +35,7 @@ rows = con.execute(
                max(attendance) OVER (PARTITION BY "date") AS att_max
         FROM read_csv_auto('{CSV}')
         WHERE "date" >= '2023-01-01' AND status IN ('Final', 'Scheduled')
+          AND game_type NOT IN ('S', 'E')
     )
     SELECT d, dn, h, opp, att_max AS att,
            CASE WHEN n_games > 1 THEN 'DH' ELSE 'R' END AS gt
@@ -49,6 +50,7 @@ med = dict(
         SELECT day_night, CAST(median(attendance) AS INT)
         FROM read_csv_auto('{CSV}')
         WHERE attendance > 0 AND "date" >= '2023-01-01'
+          AND game_type NOT IN ('S', 'E')
         GROUP BY 1
         """
     ).fetchall()
